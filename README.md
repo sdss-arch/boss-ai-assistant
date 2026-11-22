@@ -1,11 +1,27 @@
-# BOSS直聘 AI 助手（桌面端）
+<p align="center">
+  <img src="assets/banner.svg" alt="BOSS AI 助手" width="100%" />
+</p>
 
-> 基于 Electron 的多智能体求职辅助系统 —— 从打招呼到入职的全流程 AI 陪跑
+<h1 align="center">BOSS直聘 AI 助手 · 桌面端</h1>
 
-![Platform](https://img.shields.io/badge/Platform-Windows%2010%2B-0078d6)
-![Electron](https://img.shields.io/badge/Electron-43.x-47848f)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Architecture](https://img.shields.io/badge/Architecture-Multi--Agent-8c5bd8)
+<p align="center">
+  <a href="https://github.com/sdss-arch/boss-ai-assistant/actions/workflows/ci.yml"><img src="https://github.com/sdss-arch/boss-ai-assistant/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/sdss-arch/boss-ai-assistant/releases"><img src="https://img.shields.io/github/v/release/sdss-arch/boss-ai-assistant?display_name=tag" alt="Release" /></a>
+  <img src="https://img.shields.io/badge/tests-148%20passed-brightgreen" alt="Tests" />
+  <a href="https://github.com/sdss-arch/boss-ai-assistant/releases"><img src="https://img.shields.io/github/downloads/sdss-arch/boss-ai-assistant/total" alt="Downloads" /></a>
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%2B-0078d6" alt="Platform" />
+  <img src="https://img.shields.io/badge/Electron-43.x-47848f" alt="Electron" />
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License" /></a>
+  <a href="https://github.com/sdss-arch/boss-ai-assistant/stargazers"><img src="https://img.shields.io/github/stars/sdss-arch/boss-ai-assistant?style=social" alt="Stars" /></a>
+</p>
+
+<p align="center">
+  基于 Electron 的多智能体求职辅助系统 —— 从打招呼到入职的全流程 AI 陪跑
+</p>
+
+---
+
+> 📦 **迁移说明**：本项目迁移自 [`96806105/boss-ai-desktop`](https://github.com/96806105/boss-ai-desktop)，并在此基础上了完善网页助手、自动辅助、工作台、职业顾问 Agent、完整测试体系与工程治理（CI/CD、安全策略、文档体系）。旧仓库仅作历史存档，后续维护请以本仓库为准。详见 [更新日志](./CHANGELOG.md)。
 
 > ⚠️ **免责声明**：受 BOSS直聘、小红书等平台页面结构改版与反爬风控机制影响，部分功能（页面元素采集、登录态保持、搜索结果提取等）可能存在 Bug 或偶发失效，本项目将持续跟进修复。本项目仅供学习交流与个人求职使用，请合理控制使用频率，遵守各平台用户协议与相关法律法规；因使用本工具产生的一切后果由使用者自行承担。
 
@@ -15,25 +31,28 @@
 
 - [项目简介](#项目简介)
 - [核心特性](#核心特性)
+- [界面预览](#界面预览)
 - [系统架构](#系统架构)
 - [技术栈](#技术栈)
 - [快速开始](#快速开始)
 - [使用指南](#使用指南)
 - [目录结构](#目录结构)
 - [数据与隐私](#数据与隐私)
+- [文档](#文档)
 - [常见问题](#常见问题)
-- [贡献指南](#贡献指南)
+- [贡献与维护](#贡献与维护)
 - [License](#license)
 
 ---
 
 ## 项目简介
 
-BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌 BOSS直聘浏览器环境，右侧常驻 AI 面板，由 **9 个专业智能体（Agent）** 组成协作网络，覆盖求职全流程：
+BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌 BOSS直聘浏览器环境，右侧常驻 AI 面板，由 **10 个专业智能体（Agent）** 组成协作网络，覆盖求职全流程：
 
-**沟通** → 打招呼语、消息回复、求职信撰写、通用聊天
-**准备** → 面试模拟、岗位匹配、公司尽调、公司名解析
-**决策** → 职位库智能检索、小红书口碑采集、风险速查
+**沟通** → 招呼语、消息回复、求职信撰写、通用聊天  
+**准备** → 面试模拟、岗位匹配、公司尽调、公司名解析、职业规划  
+**决策** → 职位库智能检索、小红书口碑采集、风险速查  
+**管理** → 网页直读、收藏跟进、面试记录、Offer 对比
 
 所有生成内容基于用户真实简历与公开检索信息，杜绝编造；发送动作始终由用户手动确认，最大限度规避账号风控。
 
@@ -54,95 +73,82 @@ BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌
 | 聊天助手 | 通用问题解答与对话 | 上下文理解 + 简历匹配 + 多轮对话记忆 |
 | 公司名解析器 | 从文本提取标准化公司名称 | 智能实体识别 + 标准化处理 |
 | 避雷速查师 | 快速核查公司风险与口碑 | 司法风险扫描 + 招聘口碑分析 + 风险等级评估 |
+| 职业顾问 | 结合当前网页岗位给出规划建议 | 岗位上下文读取 + 简历能力映射 |
+
+### 🌐 网页助手（无需建档）
+
+- 自动读取当前 BOSS 页面中的岗位详情或聊天上下文。
+- 直接对当前网页执行简历诊断、优化、模拟面试和沟通草稿生成。
+- 一键收藏当前职位或匹配结果，按「感兴趣 / 已沟通 / 已投简历 / 面试中 / Offer / 已结束」跟进。
+- 收藏记录保存 JD、简历快照、沟通摘要、生成文案、面试准备卡和公司报告，页面下架后仍可查看。
+
+### ⚡ 自动辅助
+
+- 配置一次 API Key 与简历后默认开启；自动生成岗位分析、沟通摘要、回复草稿和面试要点。
+- 页面或消息变化时自动更新；相同内容复用缓存，短时变化合并处理。
+- 新消息草稿自动填入空闲聊天框；正在输入或已有人工草稿时保留原内容。
+- **不会**自动点击发送、提交简历或确认面试；明确日期与原文依据的面试安排才建立待确认记录。
 
 ### 🎯 岗位匹配（全库检索 + 定时监控）
 
-- **全库检索**：自动从简历提取技能关键词（8 个），后台隐藏窗口逐词检索 BOSS 职位库（约 120+ 候选），不打扰当前浏览
-- **思考式打分**：每个岗位过三问——核心要求是什么 / 简历能否实质支撑 / 差距能否补上；说不出具体经历支撑的一律不超过 60 分（反擦边铁律）
-- **补充要求覆盖**：无需改简历即可临时覆盖——"意向城市：苏州；期望薪资 12K 以上；不接受销售岗"（内置 100+ 城市代码，检索城市自动跟随）
-- **定时刷新 + 新匹配提醒**：15/30/60 分钟自动重检，新出现的高分岗位面板横幅提醒
-- **一键跳转**：点击岗位卡片直接在 BOSS 中打开详情，立即沟通
+- **全库检索**：从简历提取技能关键词，后台隐藏窗口逐词检索 BOSS 职位库（约 120+ 候选）。
+- **思考式打分**：核心要求是什么 / 简历能否实质支撑 / 差距能否补上；没有具体经历支撑的一律不超过 60 分。
+- **补充要求覆盖**：临时指定城市、薪资底线、排除关键词、外包及双休条件（内置 100+ 城市代码）。
+- **定时刷新**：15/30/60 分钟自动重检，新出现的高分岗位面板横幅提醒；一键跳转岗位详情。
 
 ### 📝 像人一样写作（非模板生成）
 
-- 相关性工程化：简历按 JD 关键词切分为"高相关片段 / 其余片段"，只允许从高相关片段选材，无关经历（如会计岗投运营）自动隔离
-- few-shot 语感示例 + 35 个 AI 痕迹禁用词（贵司/赋能/首先/综上…）
-- 历史防雷同：注入最近发出的招呼语，禁止结构重复；随机盐破解服务端缓存
-- 诚实降级：简历与岗位无交集时坦白说明，禁止编造"会一点/自学过"等中间状态
+- 简历按 JD 关键词切分为「高相关片段 / 其余片段」，只允许从高相关片段选材。
+- few-shot 语感示例 + 35 个 AI 痕迹禁用词（贵司 / 赋能 / 首先 / 综上…）。
+- 历史防雷同 + 随机盐破解服务端缓存；风格设置（专业稳重 / 热情亲和 / 简洁高效 / 自定义）统一作用于写作功能。
+- 诚实降级：简历与岗位无交集时坦白说明，禁止编造「会一点 / 自学过」等中间状态。
 
-### 🏢 公司尽调（防骗必备）
+### 🏢 公司尽调与工作台
 
-- 三引擎并行采集工商 / 司法 / 舆情 / 股权线索，结构化字段多值投票（注册资本、法代、成立时间、信用代码…）
-- 自动识别关联公司污染（"子公司注册资本 1.2 亿"不写入主公司档案）
-- 证据冲突时并列呈现并标注"需官方核实"；负面线索区分"事实"与"自媒体待核实"
-- 完整 Markdown 报告：基础档案表格 / 司法风险 / 股权线索 / 舆情口碑 / 防骗提示 / 核实建议
+- 三引擎并行采集工商 / 司法 / 舆情 / 股权线索，多值投票抽取结构化字段，自动识别关联公司污染。
+- 小红书站内口碑需用户自行登录并复制粘贴为证据，报告优先引用并标注「个人观点不代表官方事实」。
+- 工作台：今日待办、面试记录、Offer 保证年现金对比、渠道与简历版本统计、JSON / ICS 导出。
+- 深色 / 浅色主题、窗口置顶、面板折叠、BOSS 视图缩放。
 
-### 📕 小红书舆情采集
+---
 
-- 搜索引擎不收录小红书站内内容，系统内打开小红书搜索页（独立视图，不覆盖 BOSS）
-- 用户登录一次，自行搜索后把笔记标题/回答复制粘贴回面板，作为尽调证据
-- 报告舆情章节**优先引用**这些站内一手内容，并标注"个人观点不代表官方事实"
+## 界面预览
 
-### ⚙️ 求职工作台
+> 以下截图由 `npm run capture:screenshots` 在临时用户目录中使用 **mock 数据**生成，不包含任何真实简历或聊天记录。
 
-- 职位筛选：薪资区间 / 包含排除关键词 / 公司黑名单，本地实时生效
-- 面试记录管理：待确认 / 已约面 / 已完成 / 已取消，一键生成准备卡
-- 悬浮组件：BOSS 页面内生成招呼语 / 回复 / 待发送招呼语跨页面保留 / 新消息提醒
-- 深色 / 浅色主题、窗口置顶、面板折叠、BOSS 视图缩放
+| 网页助手（自动读取当前岗位） | 工作台（收藏 / 面试 / Offer） |
+|---|---|
+| <img src="assets/screenshots/01-web-assistant.png" alt="网页助手" width="420" /> | <img src="assets/screenshots/02-workbench.png" alt="工作台" width="420" /> |
+
+| 设置（写作风格 / 简历 / 密钥） | 品牌标识 |
+|---|---|
+| <img src="assets/screenshots/03-settings.png" alt="设置" width="420" /> | <img src="assets/logo.svg" alt="Logo" width="180" /> |
 
 ---
 
 ## 系统架构
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   Electron 主进程 (main.js)               │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐ │
-│  │ bossView    │  │ panelView   │  │ matchView(隐藏)  │ │
-│  │ BOSS 直聘   │  │ AI 面板     │  │ 职位库检索窗口   │ │
-│  │ (content.js)│  │ (panel.html)│  │                  │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────────────────┘ │
-│         │ IPC (ipc.js)   │                               │
-│  ┌──────┴────────────────┴──────────────────────────┐   │
-│  │            Orchestrator（Supervisor）              │   │
-│  │  并发锁 · 事件流 · 任务记忆 · 进度回调              │   │
-│  └──────┬───────────────────────────────────────────┘   │
-│  ┌──────┴─────────┐   ┌──────────────────────────────┐ │
-│  │   Registry     │   │          Agents (9 个)        │ │
-│  │  greeting      │   │  ┌─────┐ ┌─────┐ ┌────────┐  │ │
-│  │  reply         │──▶│  │reply│ │greet│ │match   │  │ │
-│  │  interview     │   │  └─────┘ └─────┘ └────────┘  │ │
-│  │  company       │   │  ┌────────┐ ┌────────────┐   │ │
-│  │  match         │   │  │company │ │application │   │ │
-│  │  application   │   │  └────────┘ └────────────┘   │ │
-│  │  chat          │   │  ┌────────┐ ┌────────────┐   │ │
-│  │  company-parse │   │  │  chat  │ │risk-parse  │   │ │
-│  │  risk          │   │  └────────┘ └────────────┘   │ │
-│  └──────┬─────────┘   └──────────────┬───────────────┘ │
-│  ┌──────┴──────────┐   ┌─────────────┴──────────────┐  │
-│  │ core/llm 网关   │   │ core/tools 采集层            │  │
-│  │ 重试/超时/用量   │   │ 百度/搜狗/Bing · 字段抽取    │  │
-│  └─────────────────┘   └────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              Skills (6 个技能模块)                 │   │
-│  │  communication · jd-parsing · resume-analysis     │   │
-│  │  risk-assessment · web-intelligence               │   │
-│  └──────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │           LearningAdapter (自适应学习)             │   │
-│  │  跟踪用户反馈 · 动态调整 prompt 策略                │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  BOSS[BOSS 页面] -->|content.js + preload| IPC[IPC 白名单路由]
+  PANEL[AI 面板] -->|preload-panel.js| IPC
+  IPC --> ORCH[Orchestrator\n并发锁 / 事件流 / 任务记忆]
+  ORCH --> REG[Registry] --> AGENTS[10 个 Agent]
+  AGENTS --> SKILLS[5 个 Skill 模块]
+  AGENTS --> CORE[LLM 网关 / Store / Tools]
+  CORE --> RESULT[结果回传与渲染]
 ```
 
-**关键设计**：
+**关键设计**
 
-- **数据流**：BOSS 页面 DOM 采集（content.js）→ IPC → Orchestrator 路由 → Agent（工具检索 + LLM）→ 结果回渲染
-- **Agent 基类**（`AgentBase`）：统一生命周期 `resolveTools → buildMessages → llm.call`，每个 Agent 独立角色/温度/模型/工具
-- **Skills 系统**：模块化技能封装，支持动态加载与热插拔
-- **LearningAdapter**：跟踪 accept/modify/reject 事件，动态调整 prompt 策略，实现自适应学习
-- **LLM 网关**：超时 / 5xx 重试 / 用量统计 / 按模型裁剪参数（reasoner 不支持 temperature）
-- **并发保护**：同一时刻仅允许一个 Agent 任务运行，定时任务自动跳过忙时
+- **数据流**：BOSS 页面 DOM 采集 → IPC → Orchestrator 路由 → Agent（工具检索 + LLM）→ 结果回渲染。
+- **Agent 基类**：统一生命周期 `resolveTools → buildMessages → llm.call`，每个 Agent 独立角色 / 温度 / 模型 / 工具。
+- **Skills 系统**：模块化技能封装，支持动态加载与热插拔。
+- **LLM 网关**：超时 / 5xx 重试 / 用量统计 / 按模型裁剪参数。
+- **并发保护**：同一时刻仅允许一个 Agent 任务运行，定时任务自动跳过忙时。
+- **安全边界**：网页桥接只暴露白名单接口，敏感配置不进入渲染进程。
+
+完整说明见 [架构文档](./docs/ARCHITECTURE.md)。
 
 ---
 
@@ -150,14 +156,15 @@ BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌
 
 | 层 | 技术 |
 |---|---|
-| 运行时 | Electron 43 + Node.js |
-| 界面 | 原生 HTML/CSS/JS（Design Tokens 主题系统） |
+| 运行时 | Electron 43 + Node.js 18+ |
+| 界面 | 原生 HTML / CSS / JS（Design Tokens 主题系统） |
 | 视图 | WebContentsView 多视图（BOSS / 面板 / 后台检索） |
 | 编排 | 自研 Supervisor（EventEmitter + 注册表） |
 | LLM | DeepSeek API（chat / reasoner 双模型） |
 | 采集 | 百度 / 搜狗 / Bing 多引擎 + 容错解析 |
-| 测试 | Jest（单元测试 + 集成测试） |
-| 打包 | electron-builder（portable 单文件 exe） |
+| 测试 | Jest（单元 + 集成）+ 真实 Electron 冒烟测试 |
+| 打包 | electron-builder（Windows portable 单文件 exe） |
+| 治理 | GitHub Actions / CodeQL / Dependabot / Keep a Changelog |
 
 ---
 
@@ -165,176 +172,145 @@ BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌
 
 ### 直接使用（Windows）
 
-从 [Releases](../../releases) 下载 `BOSSAI助手.exe`，双击运行，无需安装。
+从 [Releases](https://github.com/sdss-arch/boss-ai-assistant/releases) 下载 `BOSSAI助手.exe`，双击运行，无需安装。
 
 > 便携版数据目录固定于 `%APPDATA%\boss-ai-desktop`，exe 移动位置不影响登录态与设置。
 
 ### 源码开发
 
 ```bash
-# 环境要求：Node.js 18+（LTS）
-cd desktop
-npm install
+# 环境要求：Node.js 18+（推荐 20 / 22 LTS）
+git clone https://github.com/sdss-arch/boss-ai-assistant.git
+cd boss-ai-assistant/desktop
+npm ci
 npm start                 # 开发运行
 npm start -- --remote-debugging-port=9333   # 带调试端口
-npm test                  # 运行测试
-npm run test:unit         # 仅运行单元测试
-npm run test:integration  # 仅运行集成测试
+
+npm run check             # 全量 JS 语法检查
+npm test                  # 单元测试 + 集成测试
+npm run test:desktop      # 真实 Electron 冒烟测试
+npm run verify            # 一次性执行以上全部验证
+npm run capture:screenshots  # 重新生成截图（mock 数据）
 npm run build             # 打包 → dist/BOSSAI助手.exe
 ```
 
 ### 首次配置
 
-1. **设置页**：填入 DeepSeek API Key（platform.deepseek.com 获取）
-2. **设置页**：粘贴简历文本（基本信息 + 项目经验）
-3. 打开 BOSS 直聘页面，扫码登录（登录态本地保存）
-4. 各智能体即可使用
+1. **设置页**：填入 DeepSeek API Key（platform.deepseek.com 获取）。
+2. **设置页**：粘贴简历文本，或导入 PDF / DOCX / TXT / Markdown。
+3. 打开 BOSS 直聘页面，扫码登录（登录态本地保存）。
+4. 各智能体即可使用；自动辅助默认开启，可在首页暂停。
 
 ---
 
 ## 使用指南
 
-### 自动辅助
-
-配置一次 API Key 和简历后，自动辅助默认开启。停留在当前岗位或聊天后，自动生成岗位分析、沟通摘要、回复草稿和面试准备要点；页面或消息变化时自动更新，相同内容复用缓存，短时间的变化合并处理。打开公司页时，自动复用当天的公司报告；没有缓存时自动开始当前公司的分析。可在首页暂停自动辅助。
-
-新消息的回复草稿会自动填入空闲的聊天框；如果正在输入或存在人工草稿，会保留原内容。应用不会自动点击发送、提交简历或确认面试。聊天中有明确日期、时刻和原文依据的面试安排会建立“待确认”记录。实际沟通过的岗位自动同步跟进，重复打开不会重复建立记录；只浏览职位不会批量建立跟进记录。手动任务会优先于后台分析，不需要先手动停止后台任务。
-
-### 写作风格
-
-设置中提供三个内置风格：专业稳重、热情亲和、简洁高效；也可选择自定义，填写语气、篇幅和表达要求。选择和自定义编辑会自动保存，统一用于招呼语、招聘聊天回复、求职信及相关写作功能。自动分析的风格只作用于回复文案，不改变分析字段或 JSON 格式；切换风格后旧回复缓存失效。
-
-### 从当前网页直接使用
-
-- **网页助手首页**：在左侧打开职位详情或具体聊天，右侧自动读取当前岗位。简历分析、优化、模拟面试和沟通草稿直接使用网页内容，不要求建立档案。
-- **收藏与跟进**：一键收藏当前职位或匹配结果，无需录入职位信息；按感兴趣、已沟通、已投简历、面试中、Offer、已结束管理。
-- **收藏记录**：保存 JD、简历版本快照、沟通摘要、生成文案、面试准备卡和公司报告；页面下架后仍能查看本地快照。
-- **今日待办**：显示当天及逾期跟进事项、未来 24 小时面试。提醒在应用内显示；需要关闭应用后提醒时，可导出面试日历到自己的日历软件。
-- **简历优化**：设置中导入 PDF、DOCX、TXT 或 Markdown，预览后保存；当前网页助手提供诊断及简历草稿，可编辑、局部改写并另存为版本，原简历保留。扫描 PDF 暂不支持 OCR。
-- **模拟面试**：直接根据当前网页岗位开始逐题练习，回答后给出点评并追问；收藏后的岗位也可从跟进页继续练习。
-- **沟通跟进**：整理当前聊天为摘要，生成询问进度、确认面试、薪资沟通、婉拒草稿；用户核对接收方及内容后自行发送。
-- **Offer 与复盘**：记录保证月薪、发薪月数、另计保证奖金、通勤和其他条件，比较保证年现金；按渠道和简历版本统计沟通、回复、面试及 Offer。
-- **导出**：工作台可导出包含简历快照的岗位档案 JSON；面试记录支持 ICS 日历导出。档案可能包含个人资料，请妥善保存。
-
-### 匹配与公司档案
-
-岗位匹配支持明确的城市、薪资底线、排除关键词、外包及双休条件。未知条件标为待确认；对前 5/10/20 个优先候选补充 JD，未获取详情的岗位仅初筛且评分上限 60。标记不感兴趣的岗位后续会跳过，可在工作台恢复。匹配结果和去重基线重启后保留。
-
-公司报告附检索日期、来源链接及摘录，每家公司保留最近五次报告并显示新增来源数量；小红书证据按公司分别保存。旧版未分配证据保留，不自动混入新公司报告。
-
-### 开发验证
-
-```bash
-cd desktop
-npm test -- --runInBand
-npm run test:desktop
-npm run build
-```
-
-桌面流程验证使用独立临时用户目录、本地网页和模拟模型响应，覆盖创建岗位、阶段变更、关联资料、模拟面试、Offer、面试记录、筛选保存、网页桥接权限和重启恢复，不调用真实付费 API。
-
 | 场景 | 操作 |
 |---|---|
 | 生成招呼语 | 打开职位详情页 → 面板「助手」→ 招呼语 → 两版任选 → 填入输入框 |
 | 回复消息 | 聊天页收到消息 → 面板「回复」→ 生成 → 填入发送 |
-| 面试准备 | 「面试」→ 填公司/岗位（可"从会话获取"）→ 生成准备卡 |
-| 岗位匹配 | 打开职位列表 → 「匹配」→ 立即匹配（可写补充要求覆盖简历）→ 点卡片直达岗位 |
+| 面试准备 | 「面试」→ 填公司 / 岗位（可「从会话获取」）→ 生成准备卡 |
+| 岗位匹配 | 打开职位列表 → 「匹配」→ 立即匹配（可写补充要求）→ 点卡片直达岗位 |
 | 公司尽调 | 「公司」→ 输入公司名 → 开始分析 → 完整尽调报告 |
 | 小红书口碑 | 「公司」→ 打开小红书搜索 → 站内搜索 → 复制粘贴为证据 → 重新分析 |
-| 职位筛选 | 「筛选」→ 设置薪资/关键词/黑名单 → 应用（本地生效） |
+| 职位筛选 | 「筛选」→ 设置薪资 / 关键词 / 黑名单 → 应用（本地生效） |
+| 网页助手 | 在左侧打开职位或聊天 → 右侧自动读取 → 直接使用诊断 / 面试 / 草稿工具 |
+| Offer 对比 | 工作台 → 填写月薪 / 月数 / 奖金 → 查看保证年现金对比 |
+
+更多说明见 README 原文功能章节与 [路线图](./docs/ROADMAP.md)。
 
 ---
 
 ## 目录结构
 
-```
-boss-ai-desktop/
+```text
+boss-ai-assistant/
+├── .github/                     # CI / Release / CodeQL / Dependabot / 模板
+├── assets/                      # 品牌资产与界面截图
+├── docs/                        # 架构、路线图、隐私说明
+├── scripts/                     # 语法检查与截图生成脚本
 ├── desktop/
-│   ├── main.js              # 主进程：窗口/多视图/注入/生命周期
-│   ├── preload-boss.js      # BOSS 页桥（chrome.* → IPC）
-│   ├── preload-panel.js     # 面板 API 暴露
-│   ├── panel.html/css/js    # AI 面板 UI
-│   ├── content/content.js   # 注入 BOSS：JD 抓取/聊天监听/筛选/悬浮组件
-│   ├── prompts/             # Agent prompt 模板（10 个 agent）
-│   └── src/
-│       ├── core/            # logger / store / llm 网关 / tools 采集层
-│       │   ├── llm.js       # LLM 调用网关（超时/重试/用量统计）
-│       │   ├── learning-adapter.js  # 自适应学习模块
-│       │   └── image-bank.js        # 简历图片管理
-│       ├── agents/          # 9 个专业智能体
-│       │   ├── agent-base.js        # Agent 基类（统一生命周期）
-│       │   ├── greeting.js          # 招呼语专家
-│       │   ├── reply.js             # 回复助手
-│       │   ├── interview.js         # 面试教练
-│       │   ├── company.js           # 尽调分析师
-│       │   ├── match.js             # 岗位匹配师
-│       │   ├── application.js       # 求职信助手
-│       │   ├── chat.js              # 聊天助手
-│       │   ├── company-parse.js     # 公司名解析器
-│       │   └── risk.js              # 避雷速查师
-│       ├── skills/          # 技能模块（6 个）
-│       │   ├── skill-base.js        # 技能基类
-│       │   ├── skill-loader.js      # 技能加载器
-│       │   ├── communication/       # 沟通讯息技能
-│       │   ├── jd-parsing/          # JD 解析技能
-│       │   ├── resume-analysis/     # 简历分析技能
-│       │   ├── risk-assessment/     # 风险评估技能
-│       │   └── web-intelligence/    # 网络情报技能
-│       ├── utils/           # 工具库（7 个模块）
-│       │   ├── dom-helpers.js       # DOM 操作辅助
-│       │   ├── prompt-loader.js     # Prompt 模板加载器
-│       │   ├── status-helpers.js    # 状态管理辅助
-│       │   ├── string-utils.js      # 字符串工具
-│       │   ├── text-parsing.js      # 文本解析工具
-│       │   └── ui-components.js     # UI 组件
-│       ├── registry.js      # Agent 注册表
-│       ├── orchestrator.js  # Supervisor 编排
-│       └── ipc.js           # IPC 路由
-├── README.md
-├── LICENSE
-└── .gitignore
+│   ├── main.js                  # 主进程：窗口 / 多视图 / 注入 / 生命周期
+│   ├── preload-boss.js          # BOSS 页桥（白名单 → IPC）
+│   ├── preload-panel.js         # 面板 API 暴露
+│   ├── panel.html/css/js        # AI 面板 UI
+│   ├── content/content.js       # 注入 BOSS：JD 抓取 / 聊天监听 / 悬浮组件
+│   ├── auto-assist.js           # 自动辅助（变化合并、缓存复用）
+│   ├── webpage-assistant.js     # 网页助手（无需建档直接使用）
+│   ├── workbench.js/css         # 工作台：收藏 / 面试 / Offer
+│   ├── prompts/                 # Agent Prompt 模板
+│   ├── src/
+│   │   ├── agents/              # 10 个专业智能体（含职业顾问）
+│   │   ├── skills/              # 5 个可插拔技能模块
+│   │   ├── core/                # LLM / Store / Tools / 自动记录 / 写作风格 / 简历导入
+│   │   ├── utils/               # 通用工具
+│   │   ├── ipc.js               # IPC 白名单路由
+│   │   ├── registry.js          # Agent 注册表
+│   │   └── orchestrator.js      # Supervisor 编排
+│   └── tests/                   # 单元 / 集成 / 桌面冒烟测试
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── CODE_OF_CONDUCT.md
+└── LICENSE
 ```
 
 ---
 
 ## 数据与隐私
 
-- **个人配置存本机** `%APPDATA%\boss-ai-desktop\settings.json`：API Key 使用系统安全存储加密，配置原子写入并保留 `.bak` 恢复副本；简历、配置和历史记录保存在该目录。调用模型时，相关简历、JD 与必要聊天片段会发送到配置的 DeepSeek 服务。
-- 代码仓库**不包含任何**真实用户数据（示例均为占位符）
-- 公开信息采集仅通过搜索引擎公开结果，不破解登录 / 反爬
-- 小红书需用户自行登录、自行粘贴内容，系统只做只读提取
-- 消息发送始终由用户手动确认，系统只生成与填入
+- 个人配置存本机 `%APPDATA%\boss-ai-desktop`；API Key 加密存储，配置原子写入并保留 `.bak` 恢复副本。
+- 代码仓库 **不包含任何** 真实用户数据；示例均为占位符，截图使用 mock 数据。
+- 调用模型时，任务相关的简历 / JD / 必要聊天片段会发送到配置的 DeepSeek 服务。
+- 公开信息采集仅通过搜索引擎公开结果，不破解登录 / 反爬；小红书内容由用户自行登录后复制粘贴。
+- 消息发送始终由用户手动确认，系统只生成与填入。
+
+详见 [隐私说明](./docs/PRIVACY.md) 与 [安全策略](./SECURITY.md)。
+
+---
+
+## 文档
+
+- [架构说明](./docs/ARCHITECTURE.md) —— 进程模型、IPC 边界、Agent / Skill 扩展指南
+- [路线图](./docs/ROADMAP.md) —— 已完成与规划中的能力
+- [隐私说明](./docs/PRIVACY.md) —— 数据清单、第三方服务与删除方式
+- [贡献指南](./CONTRIBUTING.md) —— 开发环境、提交规范、PR 流程
+- [安全策略](./SECURITY.md) —— 支持版本、漏洞报告与安全边界
+- [更新日志](./CHANGELOG.md) —— 版本变更记录
 
 ---
 
 ## 常见问题
 
-**Q：为什么每次打开都要重新登录 BOSS？**
+**Q：为什么每次打开都要重新登录 BOSS？**  
 便携版数据目录已固定（v1.0.0+），与 exe 位置无关；若仍出现请确认 `%APPDATA%\boss-ai-desktop` 未被清理。
 
-**Q：小红书页面打不开 / 白屏？**
-小红书对"新窗口 / 新视图直接访问"有风控，系统使用主视图导航方式打开（v1.0.0+），请更新到最新版本。
+**Q：小红书页面打不开 / 白屏？**  
+小红书对新窗口 / 新视图直接访问有风控，系统使用主视图导航方式打开（v1.0.0+），请更新到最新版本。
 
-**Q：岗位匹配结果少？**
-匹配师从简历提取最多 8 个关键词检索职位库（每词 15 个岗位 ≈ 120 候选），可通过设置页丰富简历中的技能描述扩大覆盖面。
+**Q：岗位匹配结果少？**  
+匹配师从简历提取最多 8 个关键词检索职位库（每词 15 个岗位 ≈ 120 候选）；可通过设置页丰富简历中的技能描述扩大覆盖面。
 
-**Q：生成内容中出现不实信息？**
-所有 Agent 均内置防编造约束（简历外细节 / "会一点"类声称一律禁止），如发现请提交 Issue。
+**Q：生成内容中出现不实信息？**  
+所有 Agent 均内置防编造约束（简历外细节 /「会一点」类声称一律禁止），如发现请提交 Issue。
+
+**Q：截图里有真实数据吗？**  
+没有。截图脚本使用临时用户目录与 mock 模型响应，详见 `scripts/capture-screenshots.cjs`。
 
 ---
 
-## 贡献指南
+## 贡献与维护
 
-1. Fork 本仓库并创建特性分支
-2. 遵循现有代码风格（模块化、无框架依赖、中文注释）
-3. 提交前运行 `node --check` 语法检查全部 JS 文件
-4. 确保不引入任何真实用户数据
-5. 提交 PR 并描述改动动机
+欢迎提交 Issue 与 Pull Request。提交前请阅读 [贡献指南](./CONTRIBUTING.md) 与 [行为准则](./CODE_OF_CONDUCT.md)，并确保 `npm run verify` 通过。`main` 分支受保护，CI 全绿后方可合并。
+
+- [开启一个新的 Issue](https://github.com/sdss-arch/boss-ai-assistant/issues/new/choose)
+- [查看项目看板](https://github.com/sdss-arch/boss-ai-assistant/projects)
+- [版本发布与下载](https://github.com/sdss-arch/boss-ai-assistant/releases)
 
 ---
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) © 2026 BOSS AI Contributors
 
-Copyright © 2026 BOSS直聘 AI Contributors
+> 本项目与 BOSS直聘、小红书等平台无官方关联；商标归各自所有者所有。
