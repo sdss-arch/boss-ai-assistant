@@ -13,3 +13,7 @@ Cookies
 .DS_Store
 Thumbs.db
 *.user
+
+# 自动验证生成的截图与报告
+test-results/
+coverage/
