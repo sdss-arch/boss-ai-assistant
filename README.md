@@ -132,7 +132,7 @@ BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌
 flowchart LR
   BOSS[BOSS 页面] -->|content.js + preload| IPC[IPC 白名单路由]
   PANEL[AI 面板] -->|preload-panel.js| IPC
-  IPC --> ORCH[Orchestrator\n并发锁 / 事件流 / 任务记忆]
+  IPC --> ORCH[Orchestrator<br/>并发锁 / 事件流 / 任务记忆]
   ORCH --> REG[Registry] --> AGENTS[10 个 Agent]
   AGENTS --> SKILLS[5 个 Skill 模块]
   AGENTS --> CORE[LLM 网关 / Store / Tools]

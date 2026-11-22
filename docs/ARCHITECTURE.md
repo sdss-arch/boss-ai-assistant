@@ -7,8 +7,8 @@ BOSS直聘 AI 助手是一个 Electron 桌面应用：主进程持有全部敏�
 ```mermaid
 flowchart LR
   subgraph Renderer[渲染进程]
-    BOSS[BOSS 页面\ncontent.js]
-    PANEL[AI 面板\npanel.html / panel.js / panel.css]
+    BOSS[BOSS 页面<br/>content.js]
+    PANEL[AI 面板<br/>panel.html / panel.js / panel.css]
   end
 
   subgraph Bridge[Preload 安全桥]
@@ -17,12 +17,12 @@ flowchart LR
   end
 
   subgraph Main[Electron 主进程]
-    IPC[IPC 路由\nsrc/ipc.js]
-    ORCH[Orchestrator\nSupervisor]
-    REG[Registry\nAgent 注册表]
-    AG[Agents\n9+ 专业智能体]
-    SK[Skills\n可插拔技能]
-    CORE[Core\nLLM / Store / Tools / Logger]
+    IPC[IPC 路由<br/>src/ipc.js]
+    ORCH[Orchestrator<br/>Supervisor]
+    REG[Registry<br/>Agent 注册表]
+    AG[Agents<br/>9+ 专业智能体]
+    SK[Skills<br/>可插拔技能]
+    CORE[Core<br/>LLM / Store / Tools / Logger]
   end
 
   BOSS --> PB --> IPC
