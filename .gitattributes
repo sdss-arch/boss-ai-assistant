@@ -1,0 +1,21 @@
+# 统一换行符，避免 Windows / macOS / Linux 协作时的整文件差异
+* text=auto eol=lf
+
+# Windows 启动脚本必须使用 CRLF
+*.bat text eol=crlf
+
+# 二进制资源（禁止换行符转换）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.asar binary
+*.exe binary
+
+# 统计时排除生成物与依赖
+desktop/node_modules/** linguist-vendored
+desktop/dist/** linguist-generated
+desktop/package-lock.json linguist-generated
