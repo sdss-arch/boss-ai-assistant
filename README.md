@@ -172,7 +172,7 @@ flowchart LR
 
 ### 直接使用（Windows）
 
-从 [Releases](https://github.com/sdss-arch/boss-ai-assistant/releases) 下载 `BOSSAI助手.exe`，双击运行，无需安装。
+从 [Releases](https://github.com/sdss-arch/boss-ai-assistant/releases) 下载便携版 `BOSSAI.exe`，双击运行，无需安装。
 
 > 便携版数据目录固定于 `%APPDATA%\boss-ai-desktop`，exe 移动位置不影响登录态与设置。
 
@@ -191,7 +191,7 @@ npm test                  # 单元测试 + 集成测试
 npm run test:desktop      # 真实 Electron 冒烟测试
 npm run verify            # 一次性执行以上全部验证
 npm run capture:screenshots  # 重新生成截图（mock 数据）
-npm run build             # 打包 → dist/BOSSAI助手.exe
+npm run build             # 打包 → dist/BOSSAI.exe
 ```
 
 ### 首次配置

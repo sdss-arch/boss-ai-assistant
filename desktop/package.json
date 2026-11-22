@@ -45,7 +45,7 @@
       ]
     },
     "portable": {
-      "artifactName": "BOSSAI助手.exe"
+      "artifactName": "BOSSAI.exe"
     },
     "asarUnpack": [
       "node_modules/**/pdfjs-dist/**/*",
