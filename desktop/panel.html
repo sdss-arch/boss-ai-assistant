@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>BOSS AI 助手</title>
 <link rel="stylesheet" href="panel.css">
+<link rel="stylesheet" href="workbench.css">
 </head>
 <body data-theme="auto">
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
@@ -59,12 +60,14 @@
     </div>
   </div>
 
+  <div id="networkBanner" class="network-banner" hidden role="status"></div>
   <nav class="tabs">
     <button class="tab active" data-tab="assist"><svg class="ic"><use href="#i-chat"/></svg>助手</button>
     <button class="tab" data-tab="interview"><svg class="ic"><use href="#i-briefcase"/></svg>面试</button>
     <button class="tab" data-tab="match"><svg class="ic"><use href="#i-target"/></svg>匹配</button>
     <button class="tab" data-tab="company"><svg class="ic"><use href="#i-building"/></svg>公司</button>
     <button class="tab" data-tab="filter"><svg class="ic"><use href="#i-filter"/></svg>筛选</button>
+    <button class="tab" data-tab="workbench"><svg class="ic"><use href="#i-clock"/></svg>跟进</button>
     <button class="tab" data-tab="settings"><svg class="ic"><use href="#i-gear"/></svg>设置</button>
   </nav>
 
@@ -169,7 +172,7 @@
             <div class="field"><label>岗位</label><input type="text" id="ivRecTitle"></div>
           </div>
           <div class="field-row">
-            <div class="field"><label>时间</label><input type="text" id="ivRecDate" placeholder="8/14 14:00"></div>
+            <div class="field"><label>时间</label><input type="datetime-local" id="ivRecDate"></div>
             <div class="field"><label>状态</label>
               <select id="ivRecStatus">
                 <option value="pending">待确认</option>
@@ -179,7 +182,9 @@
               </select>
             </div>
           </div>
+          <div class="field"><label>面试轮次</label><input id="ivRecRound" placeholder="初面 / 技术二面 / HR 面"></div>
           <div class="field"><label>备注</label><input type="text" id="ivRecNote" placeholder="面试官/地点/注意事项"></div>
+          <div class="field"><label>面后复盘</label><textarea id="ivRecReview" rows="3" placeholder="被问到的问题、回答表现、待改进内容"></textarea></div>
           <button class="btn primary block" id="btnSaveIv">保存记录</button>
         </div>
         <div id="ivList" style="margin-top:10px;"></div>
@@ -212,7 +217,7 @@
         </div>
         <p class="desc">从简历提取技能关键词，自动在 BOSS 职位库（后台逐词检索，不打扰当前页面）收集候选岗位，再由匹配师逐个深度思考打分：核心要求是什么 → 简历能否实质支撑 → 差距能否补上。</p>
         <div class="btn-row">
-          <button class="btn primary flex" id="btnMatchRun"><svg class="ic"><use href="#i-refresh"/></svg>立即匹配当前列表</button>
+          <button class="btn primary flex" id="btnMatchRun"><svg class="ic"><use href="#i-refresh"/></svg>检索并匹配岗位</button>
           <button class="btn ghost" id="btnMatchStop" style="display:none;">停止</button>
         </div>
         <div class="field-row" style="margin-top:10px;">
@@ -236,6 +241,14 @@
           <label>补充要求（覆盖简历，无需重传简历）</label>
           <textarea id="matchExtra" rows="3" placeholder="如：意向城市 苏州；期望薪资 15-20K；不接受销售岗；可接受单休/出差。匹配师会以这些条件为准重新评估"></textarea>
         </div>
+        <details class="career-gap"><summary>硬性筛选条件</summary>
+          <div class="field-row"><div class="field"><label>意向城市</label><input id="matchCity" placeholder="如：杭州"></div><div class="field"><label>最低月薪（K）</label><input id="matchMinSalary" type="number" min="0" step="0.5"></div></div>
+          <div class="field"><label>排除关键词（逗号分隔）</label><input id="matchExclude" placeholder="销售,保险"></div>
+          <label><input type="checkbox" id="matchNoOutsource"> 排除明确标注的外包 / 派遣</label><br>
+          <label><input type="checkbox" id="matchDoubleWeekend"> 要求双休（未说明的保留并标为待确认）</label>
+          <div class="field career-gap"><label>补充详情的岗位数（优先候选）</label><select id="matchDetailLimit"><option value="5">5 个</option><option value="10" selected>10 个</option><option value="20">20 个</option></select></div>
+          <button class="btn secondary block" id="matchSaveConditions">保存筛选条件</button>
+        </details>
         <div class="status" id="matchStatus"></div>
         <div id="matchNewBanner" class="match-new-banner" style="display:none;"></div>
         <div class="match-meta" id="matchMeta" style="display:none;"></div>
@@ -352,9 +365,13 @@
             <option value="prof">专业稳重</option>
             <option value="warm">热情亲和</option>
             <option value="brief">简洁高效</option>
+            <option value="custom">自定义</option>
           </select>
         </div>
-        <div class="field"><label>自定义要求（选填）</label><textarea id="customPrompt" rows="2" placeholder="如：不要用感叹号；突出项目管理经验"></textarea></div>
+        <p class="desc" id="styleDescription"></p>
+        <p class="desc" id="styleExample"></p>
+        <div class="field" id="customStyleField" hidden><label for="customPrompt">自定义写作要求</label><textarea id="customPrompt" rows="3" maxlength="2000" placeholder="例如：像日常聊天，不用感叹号；每条回复不超过50字；先回应对方的问题"></textarea></div>
+        <div class="status" id="writingStyleStatus" role="status">选择后自动保存，招呼语、回复和求职信统一使用。</div>
       </div>
       <div class="card">
         <div class="card-head"><h2>简历</h2></div>
@@ -370,6 +387,7 @@
             </div>
           </div>
         </div>
+        <button class="btn secondary block" id="btnImportResume">导入 PDF / Word / 文本简历</button><p class="desc">文件在本机提取文字，预览编辑后点击保存设置。扫描版 PDF 需先识别为文字。</p>
         <div class="field"><label>简历内容（仅当前选中的简历会用于生成）</label><textarea id="resumeText" rows="8" placeholder="粘贴你的简历文字"></textarea></div>
       </div>
       <div class="card">
@@ -405,6 +423,12 @@
     </section>
   </main>
 
-  <script src="panel.js"></script>
+  <script src="src/core/writing-style.js"></script>
+  <script src="src/core/career.js"></script>
+<script src="src/core/automation.js"></script>
+<script src="panel.js"></script>
+<script src="workbench.js"></script>
+<script src="webpage-assistant.js"></script>
+<script src="auto-assist.js"></script>
 </body>
 </html>

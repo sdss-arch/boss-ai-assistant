@@ -1,9 +1,14 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("panelApi", {
+  importResume: () => ipcRenderer.invoke("resume:import"),
+  recordConversation: input => ipcRenderer.invoke("auto:record", input),
   // 存储
   getStore: (key) => ipcRenderer.invoke("store:get", key),
   setStore: (obj) => ipcRenderer.invoke("store:set", obj),
+  onPageContext: cb => ipcRenderer.on("boss:context", () => cb()),
+  bossStatus: () => ipcRenderer.invoke("boss:status"),
+  onBossStatus: cb => ipcRenderer.on("boss:status", (_e, info) => cb(info)),
   // BOSS 页
   bossAction: (payload) => ipcRenderer.invoke("boss:action", payload),
   reloadBoss: () => ipcRenderer.invoke("boss:reload"),

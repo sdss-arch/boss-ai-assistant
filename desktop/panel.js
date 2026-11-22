@@ -19,6 +19,43 @@ let zoomManual = false;
 let zoomVal = null;
 let resumes = [];
 let activeResumeId = null;
+let writingStyleSaving = 0;
+let writingStyleTimer = null;
+let writingStyleRevision = 0;
+let writingStyleQueue = Promise.resolve();
+
+function renderWritingStyle() {
+  const selected = $("#style").value;
+  const style = WritingStyle.resolve({ style: selected, customPrompt: $("#customPrompt").value, writingStyleVersion: 1 });
+  $("#customStyleField").hidden = selected !== "custom";
+  $("#styleDescription").textContent = selected === "custom" ? "填写自己的语气、篇幅和表达习惯，自动用于后续文案。" : style.description;
+  $("#styleExample").hidden = selected === "custom";
+  $("#styleExample").textContent = "表达示例：" + style.example;
+}
+
+function saveWritingStyleSoon() {
+  renderWritingStyle();
+  const revision = ++writingStyleRevision;
+  clearTimeout(writingStyleTimer);
+  const fields = { style: $("#style").value, customPrompt: $("#customPrompt").value.trim(), writingStyleVersion: 1 };
+  const message = $("#writingStyleStatus");
+  if (fields.style === "custom" && !fields.customPrompt) { message.textContent = "填写自定义要求后自动保存。"; return; }
+  message.textContent = "正在保存…";
+  writingStyleTimer = setTimeout(() => {
+    writingStyleQueue = writingStyleQueue.catch(() => {}).then(async () => {
+      if (revision !== writingStyleRevision) return;
+      const data = await api.getStore("bossAiSettings");
+      if (revision !== writingStyleRevision) return;
+      writingStyleSaving++;
+      try {
+        await api.setStore({ bossAiSettings: { ...(data.bossAiSettings || {}), ...fields } });
+        settings = { ...(settings || {}), ...fields };
+        if (revision === writingStyleRevision) message.textContent = "已自动保存，后续文案立即生效。";
+      } catch (err) { message.textContent = "保存失败：" + err.message; }
+      finally { writingStyleSaving--; }
+    });
+  }, 450);
+}
 
 // ============================================================
 // 主题
@@ -130,8 +167,9 @@ async function loadSettings() {
   activeResumeId = norm.active;
   $("#apiKey").value = settings.apiKey || "";
   $("#model").value = settings.model || "deepseek-chat";
-  $("#style").value = settings.style || "prof";
+  $("#style").value = WritingStyle.resolve(settings).id;
   $("#customPrompt").value = settings.customPrompt || "";
+  renderWritingStyle();
   renderResumeList();
   $("#autoReply").checked = settings.autoReply !== false;
   $("#notifySound").checked = settings.notifySound === true;
@@ -142,13 +180,22 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+  if ($("#style").value === "custom" && !$("#customPrompt").value.trim()) {
+    $("#writingStyleStatus").textContent = "请填写自定义写作要求，或选择一个内置风格。";
+    $("#customPrompt").focus();
+    return;
+  }
+  clearTimeout(writingStyleTimer);
+  writingStyleRevision++;
   syncResumeTextFromEditor();
   const cur = currentResume();
   const obj = {
+    ...settings,
     apiKey: $("#apiKey").value.trim(),
     model: $("#model").value,
     style: $("#style").value,
     customPrompt: $("#customPrompt").value.trim(),
+    writingStyleVersion: 1,
     resumes,
     activeResumeId,
     resumeText: cur ? cur.text : "",
@@ -169,7 +216,7 @@ async function saveSettings() {
 async function refreshStatus() {
   const d = await api.getStore("bossAiSettings");
   const s = d.bossAiSettings || {};
-  const st = await api.bossAction({ type: "panel-status" });
+  const st = await api.bossAction({ type: "panel-status", _timeout: 3000 });
   const info = st.ok ? st.status : {};
   const parts = [];
   const cur = currentResume();
@@ -237,7 +284,7 @@ function fmtTime(ts) {
 }
 
 function esc(s) {
-  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 // ============================================================
@@ -272,6 +319,7 @@ async function saveHistory(entry) {
   list.unshift(entry);
   if (list.length > 50) list.length = 50;
   await api.setStore({ bossAiHistory: list });
+  if (window.careerUI) await careerUI.attachGenerated(entry);
 }
 
 async function runAction(kind) {
@@ -522,13 +570,14 @@ async function sendChat() {
   const box = $("#chatMsgs");
   box.appendChild(typing);
   box.scrollTop = box.scrollHeight;
-  let jd = null;
+  let jd = null, liveChat = [];
   try {
     const jr = await api.bossAction({ type: "get-chat-history" });
+    liveChat = jr.history || [];
     if (jr && jr.ok && jr.jd && (jr.jd.title || jr.jd.desc)) jd = jr.jd;
   } catch (e) {}
   try {
-    const r = await api.agentInvoke("chat", { messages: chatHistory, mode: chatMode, jd });
+    const r = await api.agentInvoke("chat", { messages: chatHistory, mode: chatMode, jd, liveChat });
     typing.remove();
     if (!r.ok) {
       const msg = String(r.error || "生成失败");
@@ -615,6 +664,7 @@ function showLetterForm() {
       try { await navigator.clipboard.writeText(r.text); $("#ltCopy").textContent = "已复制"; } catch (e) {}
     };
     c.appendChild(res);
+    if (window.careerUI) await careerUI.attachGenerated({ kind: "application", company, title, result: r.text });
   };
   $("#ltFromChat").onclick = async () => {
     const r = await api.bossAction({ type: "get-chat-context" });
@@ -639,6 +689,8 @@ async function doPrep() {
   if (prepBusy) return;
   const company = $("#ivCompany").value.trim();
   const title = $("#ivTitle").value.trim();
+  const linkedJob = window.careerUI?.findJob(window.currentCareerJobId);
+  const job = linkedJob?.company === company && linkedJob?.title === title ? linkedJob : null;
   if (!company && !title) { setPrepStatus("请填写公司或岗位", true); return; }
   prepBusy = true;
   $("#btnPrep").disabled = true;
@@ -648,7 +700,7 @@ async function doPrep() {
   const r = await api.agentInvoke("interview", {
     company, title,
     jdDesc: $("#ivJd").value.trim(),
-    resumeText: (currentResume() || {}).text || ""
+    resumeText: job?.resumeText || (currentResume() || {}).text || ""
   });
   prepBusy = false;
   $("#btnPrep").disabled = false;
@@ -662,6 +714,7 @@ async function doPrep() {
   setPrepStatus("");
   setAgentState("", "多智能体系统就绪");
   $("#prepResult").innerHTML = '<div class="ver"><div class="txt">' + renderMd(r.text) + "</div><div class='ops'><button class='btn secondary sm' id='prepCopy'>复制</button></div></div>";
+  if (job) await careerUI.attach(r.text, "面试准备卡", job.id);
   $("#prepCopy").onclick = async () => {
     try { await navigator.clipboard.writeText(r.text); $("#prepCopy").textContent = "已复制"; } catch (e) {}
   };
@@ -736,7 +789,9 @@ async function renderInterviewList() {
     item.querySelector(".iv-co").textContent = (it.company || "") + " · " + (it.title || "");
     item.querySelector(".iv-tag").textContent = tagMap[it.status] || it.status;
     const sub = [];
-    if (it.date) sub.push(it.date);
+    if (it.date) sub.push(Number.isFinite(Date.parse(it.date)) ? new Date(it.date).toLocaleString() : it.date);
+    if (it.round) sub.push(it.round);
+    if (it.review) sub.push("复盘：" + it.review);
     if (it.note) sub.push(it.note);
     item.querySelector(".iv-sub").textContent = sub.join("  ·  ");
     const ops = item.querySelector(".iv-ops");
@@ -751,7 +806,17 @@ async function renderInterviewList() {
       await api.setStore({ [IV_KEY]: nl });
       renderInterviewList();
     });
-    ops.appendChild(prep); ops.appendChild(del);
+    const edit = mkBtn("编辑 / 复盘", () => {
+      window.editingInterviewId = it.id; window.currentCareerJobId = it.jobId || null;
+      $("#ivRecCompany").value = it.company || ""; $("#ivRecTitle").value = it.title || "";
+      $("#ivRecDate").value = /^\d{4}-\d{2}-\d{2}T/.test(it.date || "") ? it.date : "";
+      $("#ivRecNote").value = it.note || ""; $("#ivRecRound").value = it.round || "";
+      $("#ivRecReview").value = it.review || ""; $("#ivRecStatus").value = it.status || "pending";
+      $("#ivForm").style.display = "block";
+    });
+    const calendar = mkBtn("导出日历", () => { try { careerUI.exportCalendar(it); } catch (e) { setPrepStatus(e.message, true); } });
+    const review = mkBtn("复盘建议", () => { if (!it.jobId) { setPrepStatus("请从工作台岗位中创建关联面试后再生成复盘", true); return; } careerUI.reviewInterview(it); });
+    ops.append(prep, edit, calendar, review, del);
     box.appendChild(item);
   }
 }
@@ -828,6 +893,7 @@ async function doCompanyAnalyze() {
   setCoProgress(true, 0.05, "开始检索");
   $("#coResult").innerHTML = "";
   const input = { company };
+  await loadXhsEvidence();
   if (xhsEvidence && xhsEvidence.length) input.xhsNotes = xhsEvidence;
   const r = await api.agentInvoke("company", input);
   coBusy = false;
@@ -841,6 +907,7 @@ async function doCompanyAnalyze() {
   }
   setCoStatus("");
   setAgentState("", "多智能体系统就绪");
+  if (window.careerUI) await careerUI.attachCompany(company, r.text, r.sources || []);
   const el = document.createElement("div");
   el.className = "ver";
   const ops = document.createElement("div");
@@ -859,6 +926,7 @@ async function doCompanyAnalyze() {
   el.innerHTML = '<span class="tag">尽调报告</span><div class="txt"></div>';
   el.appendChild(ops);
   el.querySelector(".txt").innerHTML = renderMd(r.text);
+  appendSources(el, r.sources || []);
   $("#coResult").appendChild(el);
 }
 
@@ -1170,6 +1238,7 @@ async function doRiskCheck() {
   el.innerHTML = '<span class="tag">避雷速查</span><div class="txt"></div>';
   el.appendChild(ops);
   el.querySelector(".txt").innerHTML = renderMd(r.text);
+  appendSources(el, r.sources || []);
   $("#coResult").appendChild(el);
 }
 
@@ -1199,7 +1268,9 @@ function refreshXhsCount() {
 async function loadXhsEvidence() {
   try {
     const d = await api.getStore(XHS_KEY);
-    xhsEvidence = (d && d[XHS_KEY]) || [];
+    const company = $("#coName").value.trim();
+    const all = (d && d[XHS_KEY]) || {};
+    xhsEvidence = Array.isArray(all) ? [] : (all[company] || []);
   } catch (e) { xhsEvidence = []; }
   refreshXhsCount();
 }
@@ -1216,7 +1287,9 @@ $("#btnXhsOpen").onclick = async () => {
   setXhsStatus("已在左侧打开小红书搜索「" + company + "」。登录后自行搜索，把结果粘贴到下方即可。");
 };
 
+$("#coName").addEventListener("change", loadXhsEvidence);
 $("#btnXhsAdd").onclick = async () => {
+  await loadXhsEvidence();
   const t = $("#xhsPaste").value.trim();
   if (!t) { setXhsStatus("请先粘贴小红书 AI 搜索的回答内容", true); return; }
   const pieces = t.split(/\n{2,}|(?=###|【)/).map((s) => s.trim()).filter((s) => s.length >= 4);
@@ -1226,7 +1299,13 @@ $("#btnXhsAdd").onclick = async () => {
     const n = "【小红书 AI 搜索】" + p;
     if (!xhsEvidence.includes(n)) { xhsEvidence.push(n); added++; }
   }
-  if (added) await api.setStore({ [XHS_KEY]: xhsEvidence });
+  if (added) {
+    const company = $("#coName").value.trim();
+    if (!company) { setXhsStatus("请先填写公司名称", true); return; }
+    const d = await api.getStore(XHS_KEY);
+    const all = Array.isArray(d[XHS_KEY]) ? { _unassigned: d[XHS_KEY] } : (d[XHS_KEY] || {});
+    await api.setStore({ [XHS_KEY]: { ...all, [company]: xhsEvidence } });
+  }
   $("#xhsPaste").value = "";
   setXhsStatus("已加入 " + added + " 条小红书证据");
   refreshXhsCount();
@@ -1234,7 +1313,10 @@ $("#btnXhsAdd").onclick = async () => {
 
 $("#btnXhsClear").onclick = async () => {
   xhsEvidence = [];
-  await api.setStore({ [XHS_KEY]: [] });
+  const d = await api.getStore(XHS_KEY);
+  const all = Array.isArray(d[XHS_KEY]) ? { _unassigned: d[XHS_KEY] } : (d[XHS_KEY] || {});
+  delete all[$("#coName").value.trim()];
+  await api.setStore({ [XHS_KEY]: all });
   refreshXhsCount();
   setXhsStatus("已清空小红书证据");
 };
@@ -1305,7 +1387,7 @@ function renderMatchResult(data) {
     return;
   }
   const sorted = [...matched].sort((a, b) => b.score - a.score);
-  box.innerHTML = sorted.map((j) => {
+  box.innerHTML = sorted.map((j, index) => {
     const cls = j.score >= 75 ? "strong" : j.score >= 60 ? "" : "lo";
     const scoreCls = j.score >= 75 ? "hi" : j.score >= 60 ? "mid" : "lo";
     const points = (j.matchPoints || []).map((p) => "<div>· <b>" + esc(p) + "</b></div>").join("");
@@ -1318,11 +1400,23 @@ function renderMatchResult(data) {
       (j.reason ? '<div class="match-reason">' + esc(j.reason) + '</div>' : "") +
       ((points || gaps) ? '<div class="match-points">' + points + gaps + '</div>' : "") +
       (j.href ? '<div class="match-open">→ 点击打开岗位</div>' : "") +
+      '<div class="btn-row match-save"><button class="btn secondary sm" data-match-save="' + index + '">收藏到工作台</button><button class="btn ghost sm" data-match-reject="' + index + '">不感兴趣</button></div>' +
     '</div>';
   }).join("");
 }
 
 $("#matchResult").addEventListener("click", async (e) => {
+  const saveButton = e.target.closest("[data-match-save], [data-match-reject]");
+  if (saveButton && window.careerUI) {
+    const sorted = [...(matchLastData?.matched || [])].sort((a, b) => b.score - a.score);
+    const index = Number(saveButton.dataset.matchSave ?? saveButton.dataset.matchReject);
+    const job = sorted[index]; if (!job) return;
+    try {
+      if (saveButton.dataset.matchReject !== undefined) await careerUI.rejectMatched(job);
+      else { await careerUI.saveMatched(job); saveButton.textContent = "已收藏"; }
+    } catch (err) { setMatchStatus(err.message, true); }
+    return;
+  }
   const card = e.target.closest(".match-card");
   if (!card) return;
   const href = card.dataset.href;
@@ -1411,7 +1505,8 @@ api.onMatchNew((data) => {
   try {
     const st = await api.matchStatus();
     if (st.ok) {
-      if (st.settings.enabled) $("#matchInterval").value = String(st.settings.intervalMin || 30);
+      $("#matchInterval").value = st.settings.enabled ? String(st.settings.intervalMin || 30) : "0";
+      if (st.lastResult) { renderMatchResult(st.lastResult); renderMatchMeta(st.lastResult.ts, st.lastResult.total, 0); }
       if (st.settings.threshold) $("#matchThreshold").value = String(st.settings.threshold);
       if (st.settings.extra) $("#matchExtra").value = st.settings.extra;
       if (st.lastSkip && st.lastSkip.ts) {
@@ -1573,11 +1668,14 @@ $("#btnFromChat").onclick = async () => {
 $("#btnAddIv").onclick = () => {
   const f = $("#ivForm");
   f.style.display = f.style.display === "none" ? "block" : "none";
-  if (f.style.display === "block") $("#ivRecCompany").focus();
+  if (f.style.display === "block") { window.editingInterviewId = null; window.currentCareerJobId = null; $("#ivRecCompany").focus(); }
 };
 $("#btnSaveIv").onclick = async () => {
   const rec = {
-    id: Date.now().toString(36),
+    id: window.editingInterviewId || Date.now().toString(36),
+    jobId: window.currentCareerJobId || null,
+    round: $("#ivRecRound").value.trim(),
+    review: $("#ivRecReview").value.trim(),
     company: $("#ivRecCompany").value.trim(),
     title: $("#ivRecTitle").value.trim(),
     date: $("#ivRecDate").value.trim(),
@@ -1587,8 +1685,11 @@ $("#btnSaveIv").onclick = async () => {
   };
   if (!rec.company && !rec.title) { setPrepStatus("请至少填写公司或岗位", true); return; }
   const list = await loadInterviews();
-  list.push(rec);
+  const index = list.findIndex(i => i.id === rec.id);
+  if (index >= 0) list[index] = rec; else list.push(rec);
   await api.setStore({ [IV_KEY]: list });
+  window.editingInterviewId = null;
+  if (rec.jobId && window.careerUI) { await careerUI.markInterview(rec); }
   $("#ivForm").style.display = "none";
   $("#ivRecCompany").value = ""; $("#ivRecTitle").value = ""; $("#ivRecDate").value = ""; $("#ivRecNote").value = "";
   renderInterviewList();
@@ -1636,6 +1737,7 @@ $("#btnCoFromJd").onclick = async () => {
   const r = await api.bossAction({ type: "getJd" });
   if (r.ok && r.jd && r.jd.company) {
     $("#coName").value = r.jd.company;
+    await loadXhsEvidence();
     setCoStatus("已填入：" + r.jd.company);
   } else {
     setCoStatus("未识别到当前职位公司，请手动输入", true);
@@ -1722,12 +1824,18 @@ $("#chatClear").onclick = async () => {
 };
 
 api.onStoreChanged((key) => {
-  if (key === "bossAiSettings") { loadSettings(); }
+  if (key === "bossAiSettings") {
+    if (writingStyleSaving) api.getStore(key).then(data => { settings = data[key] || {}; });
+    else loadSettings();
+  }
   if (key === "bossAiPendingGreeting") { renderPending(); }
+  if (key === "bossAiInterviews") { renderInterviewList(); }
 });
 api.onNav((section) => { if (section === "settings") showTab("settings"); });
 
 // 初始化
+$("#style").addEventListener("change", saveWritingStyleSoon);
+$("#customPrompt").addEventListener("input", saveWritingStyleSoon);
 bindResumeEvents();
 loadSettings();
 renderPending();
@@ -1740,3 +1848,20 @@ renderActivity();
 refreshZoom();
 loadXhsEvidence();
 renderUsageStats();
+function appendSources(container, sources) {
+  if (!sources.length) return;
+  const details = document.createElement("details"), summary = document.createElement("summary");
+  summary.textContent = "查看原始证据（" + sources.length + "）"; details.appendChild(summary);
+  for (const source of sources) {
+    if (!/^https?:\/\//.test(source.href)) continue;
+    const link = document.createElement("a"); link.href = source.href; link.target = "_blank"; link.rel = "noopener noreferrer";
+    link.textContent = source.title || source.href;
+    const row = document.createElement("p"); row.appendChild(link); details.appendChild(row);
+  }
+  container.appendChild(details);
+}
+window.addEventListener("unhandledrejection", event => {
+  const text = event.reason?.message || "操作失败，请重试";
+  const el = document.querySelector(".page.active .status");
+  if (el) { el.textContent = text; el.className = "status err"; }
+});

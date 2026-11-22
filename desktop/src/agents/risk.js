@@ -69,7 +69,9 @@ class RiskAgent extends AgentBase {
       signal: sig
     });
     logger.info("agent.risk", "done in", Date.now() - started, "ms, evidence=", uniq.length);
-    return { text, meta: { agent: this.id, agentName: this.name, ms: Date.now() - started, usage, evidenceRows: uniq.length } };
+    const sources = uniq.slice(0, 30).filter(it => /^https?:\/\//.test(it.href || "")).map(it => ({ title: it.title, href: it.href, snippet: it.snip || "", engine: it.engine, checkedAt: new Date().toISOString() }));
+    const sourceText = "\n\n## 检索来源（" + new Date().toLocaleDateString("zh-CN") + "）\n" + sources.map((it, i) => (i + 1) + ". " + it.title + "\n" + it.href + (it.snippet ? "\n摘录：" + it.snippet : "")).join("\n\n");
+    return { text: text + sourceText, sources, meta: { agent: this.id, agentName: this.name, ms: Date.now() - started, usage, evidenceRows: uniq.length } };
   }
 }
 

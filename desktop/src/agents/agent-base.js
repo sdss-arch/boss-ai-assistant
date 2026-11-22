@@ -27,7 +27,9 @@ class AgentBase extends BaseAgent {
    * @returns {string}
    */
   renderPrompt(filename, vars = {}) {
-    return this.promptLoader.render(this.id, filename, vars);
+    const text = this.promptLoader.render(this.id, filename, vars);
+    if (filename === "system.md" && !text.trim()) throw new Error("缺少智能体提示词模板，请重新安装完整应用：" + this.id);
+    return text;
   }
 
   /**

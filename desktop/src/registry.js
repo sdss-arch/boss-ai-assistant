@@ -7,6 +7,7 @@ const { RiskAgent } = require("./agents/risk");
 const { ApplicationAgent } = require("./agents/application");
 const { MatchAgent } = require("./agents/match");
 const { ChatAgent } = require("./agents/chat");
+const { CareerAgent } = require("./agents/career");
 
 /**
  * Agent 注册表：所有专业智能体的唯一入口。
@@ -30,6 +31,7 @@ register(new RiskAgent());
 register(new ApplicationAgent());
 register(new MatchAgent());
 register(new ChatAgent());
+register(new CareerAgent());
 
 function get(id) {
   return registry.get(id) || null;

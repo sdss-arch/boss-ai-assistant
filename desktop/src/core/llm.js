@@ -26,9 +26,13 @@ async function call({ apiKey, model, messages, temperature, maxRetries = 2, sign
   if (signal && signal.aborted) throw new Error("任务已取消");
   let lastErr = null;
   const started = Date.now();
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  const totalTimeout = AbortSignal.timeout(TIMEOUT_MS * 2);
+  const taskSignal = signal ? AbortSignal.any([signal, totalTimeout]) : totalTimeout;
+  for (let attempt = 0; attempt <= Math.min(3, Math.max(0, maxRetries)); attempt++) {
+    taskSignal.throwIfAborted();
+    if (attempt) await require("timers/promises").setTimeout(Math.min(15000, 1000 * 2 ** (attempt - 1)), null, { signal: taskSignal });
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
-    const abort = signal && !signal.aborted ? AbortSignal.any([signal, timeout]) : timeout;
+    const abort = AbortSignal.any([taskSignal, timeout]);
     try {
       const res = await fetch(API_BASE, {
         method: "POST",
@@ -43,15 +47,12 @@ async function call({ apiKey, model, messages, temperature, maxRetries = 2, sign
       const json = await res.json().catch(() => null);
       if (!res.ok) {
         const msg = json && json.error && json.error.message ? json.error.message : "HTTP " + res.status;
-        if (res.status >= 500 || res.status === 429) {
-          lastErr = new Error(msg);
-          logger.warn("llm", `attempt ${attempt + 1} retryable error:`, msg);
-          continue;
-        }
-        throw new Error(msg);
+        const error = new Error(res.status === 401 ? "API Key 无效，请在设置中检查" : msg);
+        error.retryable = res.status >= 500 || res.status === 429;
+        throw error;
       }
       const text = json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
-      if (!text) throw new Error("模型未返回内容");
+      if (!text) { const err = new Error("模型未返回内容"); err.retryable = false; throw err; }
       const usage = json.usage || {};
       usageStat.calls++;
       usageStat.tokens += usage.total_tokens || 0;
@@ -59,6 +60,7 @@ async function call({ apiKey, model, messages, temperature, maxRetries = 2, sign
       return { text, usage };
     } catch (err) {
       if (signal && signal.aborted) throw new Error("任务已取消");
+      if (err.retryable === false) { usageStat.errors++; throw err; }
       const isTimeout = err && (err.name === "AbortError" || err.name === "TimeoutError" || err.code === "UND_ERR_CONNECT_TIMEOUT");
       lastErr = isTimeout ? new Error("请求超时，请稍后重试") : err;
       logger.warn("llm", `attempt ${attempt + 1} failed:`, lastErr.message);

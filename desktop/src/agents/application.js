@@ -4,6 +4,7 @@
  */
 const { AgentBase } = require("./agent-base");
 const { resolveResume } = require("../core/store");
+const WritingStyle = require("../core/writing-style");
 const { DEFAULT_FORBIDDEN } = require("../skills/communication/index");
 
 class ApplicationAgent extends AgentBase {
@@ -24,7 +25,7 @@ class ApplicationAgent extends AgentBase {
 
     const sys = this.renderPrompt("system.md", {
       forbiddenWords: DEFAULT_FORBIDDEN.join("、")
-    });
+    }) + "\n\n" + WritingStyle.instruction(settings);
 
     const user =
       "【目标公司】" + (company || "未知") +

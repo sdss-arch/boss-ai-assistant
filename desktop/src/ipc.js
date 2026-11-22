@@ -7,16 +7,35 @@ const llm = require("./core/llm");
 const orchestrator = require("./orchestrator");
 const { list: listAgents } = require("./registry");
 const imageBank = require("./core/image-bank");
+const { PAGE_KEYS, isPanel, isBoss, pageSettings, jobUrl } = require("./core/access");
 
 /**
  * IPC 路由器：所有主进程能力对渲染层的唯一通道。
  * 依赖注入 win/bossView/panelView（由 main 装配，避免循环依赖）。
  */
-function registerIpc({ win, bossView, panelView, matchView, layoutViews, setCollapsed }) {
+function registerIpc({ win, bossView, panelView, matchView, layoutViews, setCollapsed, getNetworkStatus }) {
+  const pageChannels = new Set(["store:get", "store:set", "store:remove", "boss:page-msg"]);
+  function handle(channel, fn) {
+    ipcMain.handle(channel, async (event, ...args) => {
+      const panel = isPanel(event, panelView);
+      if (!panel && !(pageChannels.has(channel) && isBoss(event, bossView))) throw new Error("无权调用此功能");
+      if (JSON.stringify(args).length > (panel && channel === "store:set" ? 32 : 2) * 1024 * 1024) throw new Error("请求内容过大");
+      return fn(event, ...args);
+    });
+  }
+  function broadcast(key) {
+    if (!panelView.webContents.isDestroyed()) panelView.webContents.send("store:changed", key, store.get(key));
+    if ((PAGE_KEYS.has(key) || key === "bossAiSettings") && !bossView.webContents.isDestroyed()) {
+      const value = key === "bossAiSettings" ? pageSettings(store.getSettings(), store.resolveResume) : store.get(key);
+      bossView.webContents.send("store:changed", key, value);
+    }
+  }
+  handle("boss:status", () => getNetworkStatus ? getNetworkStatus() : { loading: false, error: "" });
   const bossActions = new Map();
   let actionSeq = 0;
 
-  function dispatchToBoss(payload, timeoutMs = 90000) {
+  function dispatchToBoss(payload, timeoutMs = 10000) {
+    if (bossView.webContents.isDestroyed() || !require("./core/access").isSite(bossView.webContents.getURL(), "zhipin.com")) return Promise.resolve({ ok: false, error: "请先加载 BOSS 页面" });
     return new Promise((resolve) => {
       const id = ++actionSeq;
       const timer = setTimeout(() => { bossActions.delete(id); resolve({ ok: false, error: "操作超时" }); }, timeoutMs);
@@ -26,40 +45,49 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   }
 
   // ---------- 存储 ----------
-  ipcMain.handle("store:get", (_e, key) => ({ [key]: store.get(key) }));
-  ipcMain.handle("store:set", async (_e, obj) => {
-    const changed = store.set(obj);
-    for (const k of changed) {
-      for (const wc of [bossView.webContents, panelView.webContents]) {
-        try { wc.send("store:changed", k, store.get(k)); } catch (e) {}
-      }
+  handle("store:get", (e, key) => {
+    if (!isPanel(e, panelView)) {
+      if (key === "bossAiSettings") return { [key]: pageSettings(store.getSettings(), store.resolveResume) };
+      if (!PAGE_KEYS.has(key)) throw new Error("无权读取此数据");
     }
+    return { [key]: store.get(key) };
+  });
+  handle("store:set", (e, obj) => {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("设置格式无效");
+    if (!isPanel(e, panelView) && Object.keys(obj).some(k => !PAGE_KEYS.has(k))) throw new Error("无权修改此数据");
+    const changed = store.set(obj);
+    store.flush();
+    changed.forEach(broadcast);
     return { ok: true };
   });
-  ipcMain.handle("store:remove", (_e, key) => {
+  handle("store:remove", (e, key) => {
+    if (!isPanel(e, panelView) && !PAGE_KEYS.has(key)) throw new Error("无权删除此数据");
     const existed = store.remove(key);
-    for (const wc of [bossView.webContents, panelView.webContents]) {
-      try { wc.send("store:changed", key, undefined); } catch (e) {}
-    }
+    store.flush(); broadcast(key);
     return { ok: existed };
   });
 
+  handle("resume:import", async () => {
+    try {
+      const selected = await dialog.showOpenDialog(win, { properties: ["openFile"], filters: [{ name: "简历", extensions: ["pdf", "docx", "txt", "md"] }] });
+      if (selected.canceled) return { ok: true, cancelled: true };
+      return { ok: true, ...await require("./core/resume-import").readResume(selected.filePaths[0]) };
+    } catch (err) { return { ok: false, error: err.message }; }
+  });
+
   // ---------- 简历图片库 ----------
-  ipcMain.handle("img:list", () => ({ ok: true, images: imageBank.list() }));
-  ipcMain.handle("img:pick", () => imageBank.pick(win));
-  ipcMain.handle("img:del", (_e, id) => ({ ok: imageBank.remove(String(id || "")) }));
-  ipcMain.handle("img:read", (_e, id) => {
+  handle("img:list", () => ({ ok: true, images: imageBank.list() }));
+  handle("img:pick", () => imageBank.pick(win));
+  handle("img:del", (_e, id) => ({ ok: imageBank.remove(String(id || "")) }));
+  handle("img:read", (_e, id) => {
     const d = imageBank.readDataUrl(String(id || ""));
     return d ? { ok: true, ...d } : { ok: false, error: "图片不存在" };
   });
 
   // ---------- BOSS 页消息桥 ----------
-  ipcMain.handle("boss:page-msg", async (_e, msg) => {
+  handle("boss:page-msg", async (_e, msg) => {
     try {
-      if (msg && msg.type === "generate") {
-        const { text } = await llm.call(msg.payload || {});
-        return { ok: true, text };
-      }
+      if (msg?.type === "page-context-changed") { panelView.webContents.send("boss:context"); return { ok: true }; }
       if (msg && msg.type === "generate-agent") {
         // 招呼语/回复：统一走多智能体编排（GreetingAgent v4 / ReplyAgent v2）
         const settings = store.getSettings();
@@ -99,20 +127,10 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
         wc.sendInputEvent({ type: "mouseUp", x: Math.round(msg.x * zoom), y: Math.round(msg.y * zoom), button: "left", clickCount: 1 });
         return { ok: true };
       }
-      // 简历图片库（操作台悬浮组件调用）
-      if (msg && msg.type === "pick-image") {
-        const r = await imageBank.pick(win);
-        return { ok: true, ...r };
-      }
-      if (msg && msg.type === "list-images") {
-        return { ok: true, images: imageBank.list() };
-      }
-      if (msg && msg.type === "read-image") {
-        const d = imageBank.readDataUrl(String((msg && msg.id) || ""));
-        return d ? { ok: true, ...d } : { ok: false, error: "图片不存在" };
-      }
-      if (msg && msg.type === "delete-image") {
-        return { ok: imageBank.remove(String((msg && msg.id) || "")), images: imageBank.list() };
+      if (msg && msg.type === "list-images") return { ok: true, images: [] };
+      if (msg && ["read-image", "pick-image", "delete-image"].includes(msg.type)) {
+        panelView.webContents.send("panel:nav", "assist");
+        return { ok: false, error: "请在右侧简历图片库操作" };
       }
       return { ok: false, error: "未知消息类型" };
     } catch (err) {
@@ -120,36 +138,49 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
     }
   });
 
-  ipcMain.handle("boss:action", (_e, payload) => {
+  handle("boss:action", (_e, payload) => {
     if (!bossView || bossView.webContents.isDestroyed()) return { ok: false, error: "BOSS 页面未就绪" };
-    const timeout = (payload && payload._timeout) || 90000;
+    const timeout = (payload && payload._timeout) || 10000;
     const { _timeout, ...rest } = payload || {};
-    return dispatchToBoss(rest, timeout);
+    if (rest.type === "send-resume-image") {
+      const image = imageBank.readDataUrl(rest.id);
+      if (!image) return { ok: false, error: "图片不存在" };
+      rest.image = image;
+    }
+    return dispatchToBoss(rest, Math.max(1000, Math.min(90000, Number(timeout) || 90000)));
   });
 
   // ---------- 智能体编排 ----------
-  ipcMain.handle("agent:list", () => ({ ok: true, agents: listAgents() }));
-  ipcMain.handle("agent:invoke", async (_e, req) => {
+  handle("agent:list", () => ({ ok: true, agents: listAgents() }));
+  handle("agent:invoke", async (_e, req) => {
     const intent = req && req.intent;
     if (!intent) return { ok: false, error: "缺少智能体意图" };
     try {
       const input = { ...((req && req.input) ?? (req && req.task) ?? {}), settings: store.getSettings() };
       const res = await orchestrator.invoke(intent, input, {
+        background: intent === "career" && input.task === "auto",
         onProgress: (label, total) => {
           try { panelView.webContents.send("agent:event", { type: "progress", intent, label, total }); } catch (e) {}
         }
       });
       return { ok: true, ...res };
     } catch (err) {
-      return { ok: false, error: String((err && err.message) || err) };
+      return { ok: false, error: String((err && err.message) || err), code: err.code };
     }
   });
-  ipcMain.handle("agent:log", () => ({ ok: true, log: orchestrator.getLog() }));
-  ipcMain.handle("agent:log-clear", () => ({ ok: true, cleared: orchestrator.clearLog() }));
-  ipcMain.handle("agent:stats", () => ({ ok: true, stats: llm.getStats() }));
+  handle("agent:log", () => ({ ok: true, log: orchestrator.getLog() }));
+  handle("auto:record", (_e, input) => {
+    const result = require("./core/automation").parse(JSON.stringify(input.result), input.history);
+    const recorded = require("./core/auto-record").recordConversation(store, { ...input, result });
+    if (recorded.recorded) { store.flush(); broadcast("bossAiCareerJobs"); }
+    if (recorded.interviewAdded) broadcast("bossAiInterviews");
+    return recorded;
+  });
+  handle("agent:log-clear", () => ({ ok: true, cleared: orchestrator.clearLog() }));
+  handle("agent:stats", () => ({ ok: true, stats: llm.getStats() }));
 
   // ---------- 停止当前任务（智能体 / 岗位匹配后台检索） ----------
-  ipcMain.handle("agent:cancel", () => {
+  handle("agent:cancel", () => {
     let cancelled = false;
     try { cancelled = orchestrator.cancel(); } catch (e) {}
     if (matchAbort) {
@@ -158,14 +189,14 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
     }
     return { ok: true, cancelled };
   });
-  ipcMain.handle("agent:current", () => ({
+  handle("agent:current", () => ({
     ok: true,
     current: orchestrator.getCurrent(),
     busy: orchestrator.isBusy()
   }));
 
   // ---------- API 测试连接 ----------
-  ipcMain.handle("api:test", async () => {
+  handle("api:test", async () => {
     const s = store.getSettings();
     if (!s.apiKey) return { ok: false, error: "未配置 API Key，请先填写" };
     try {
@@ -183,7 +214,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   });
 
   // ---------- 尽调报告导出 Markdown ----------
-  ipcMain.handle("file:save-report", async (_e, name, content) => {
+  handle("file:save-report", async (_e, name, content) => {
     try {
       const def = String(name || "尽调报告").replace(/[\\/:*?"<>|]/g, "-").slice(0, 60) + ".md";
       const r = await dialog.showSaveDialog(win, {
@@ -200,7 +231,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   });
 
   // ---------- 日志读取（诊断用） ----------
-  ipcMain.handle("log:read", (_e, lines) => {
+  handle("log:read", (_e, lines) => {
     try {
       const f = path.join(app.getPath("userData"), "logs", "app.log");
       if (!fs.existsSync(f)) return { ok: true, lines: [], file: f };
@@ -215,7 +246,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   // ---------- 岗位匹配（手动 + 定时 + 新匹配提醒） ----------
   const MATCH_SETTINGS_KEY = "bossAiMatchSettings";
   let matchTimer = null;
-  let matchLastIds = null;
+  let matchLastIds = store.get("bossAiMatchSeenIds") ? new Set(store.get("bossAiMatchSeenIds")) : null;
   let matchRunning = false;
   let matchAbort = null;
 
@@ -229,7 +260,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
       panelView.webContents.send("match:new", {
         count: newOnes.length,
         threshold,
-        items: newOnes.map((j) => ({ id: j.id, title: j.title, company: j.company, score: j.score }))
+        items: newOnes
       });
     } catch (e) {}
     logger.info("ipc", "match new found:", newOnes.length);
@@ -260,7 +291,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
         salary: salaryTxt,
         salaryMin: mR ? Number(mR[1]) : 0,
         salaryMax: mR ? Number(mR[2]) : 0,
-        company: txt(pick(li, [".boss-info .boss-name", ".boss-name"])),
+        company: txt(pick(li, [".company-name", ".company-info a", ".company-name a"])),
         location: txt(li.querySelector(".company-location")),
         tags: Array.from(li.querySelectorAll(".tag-list li")).map((x) => txt(x)).join("、"),
         href: href
@@ -270,7 +301,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   })()`;
 
   function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
+    return require("timers/promises").setTimeout(ms);
   }
 
   /** BOSS 城市代码表（常用城市） */
@@ -304,6 +335,39 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
     return "";
   }
 
+  async function loadMatchPage(wc, url, signal) {
+    const timeout = AbortSignal.timeout(20000);
+    const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    combined.throwIfAborted();
+    let stop;
+    const aborted = new Promise((_, reject) => {
+      stop = () => { wc.stop(); reject(new Error(signal?.aborted ? "任务已取消" : "岗位页面加载超时")); };
+      combined.addEventListener("abort", stop, { once: true });
+    });
+    try { await Promise.race([wc.loadURL(url), aborted]); }
+    finally { combined.removeEventListener("abort", stop); }
+  }
+
+  async function enrichJobs(jobs, cfg, signal, onStage) {
+    const { jobUrl } = require("./core/access");
+    const wc = matchView.webContents;
+    const count = Math.min(jobs.length, Math.max(0, Math.min(20, cfg.detailLimit ?? 10)));
+    for (let i = 0; i < count; i++) {
+      signal.throwIfAborted();
+      onStage("补充完整 JD：" + (i + 1) + "/" + count);
+      try {
+        await loadMatchPage(wc, jobUrl(jobs[i].href), signal);
+        await require("timers/promises").setTimeout(900, null, { signal });
+        const desc = await wc.executeJavaScript(`(() => { const el = document.querySelector('.job-sec-text, .job-detail-description, .job-detail .text'); return el ? el.innerText.trim() : ''; })()`);
+        if (desc) jobs[i].desc = String(desc).slice(0, 6000);
+      } catch (err) {
+        if (signal.aborted) throw err;
+        logger.warn("ipc.match", "详情未获取", err.message);
+      }
+    }
+    return jobs;
+  }
+
   async function searchJobLibrary(matchViewRef, keywords, city, pagesPerWord, onStage, signal) {
     const all = [];
     const seen = new Set();
@@ -317,8 +381,8 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
         if (signal && signal.aborted) throw new Error("任务已取消");
         if (onStage) onStage("检索中：" + kw + (pages > 1 ? " · 第" + pg + "页" : "") + "（" + (i + 1) + "/" + keywords.length + " 个关键词）");
         const url = "https://www.zhipin.com/web/geek/jobs?query=" + encodeURIComponent(kw) + "&city=" + encodeURIComponent(city || "101010100") + (pg > 1 ? "&page=" + pg : "");
-        await wc.loadURL(url).catch(() => {});
-        await sleep(4500);
+        await loadMatchPage(wc, url, signal);
+        await require("timers/promises").setTimeout(1800, null, { signal });
         if (signal && signal.aborted) throw new Error("任务已取消");
         try {
           const rows = await wc.executeJavaScript(MATCH_COLLECT_JS, true);
@@ -333,7 +397,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
         } catch (e) {
           logger.warn("ipc.match", "collect failed on page", kw, pg, e.message);
         }
-        await sleep(800 + Math.random() * 600);
+        await require("timers/promises").setTimeout(800 + Math.random() * 600, null, { signal });
       }
     }
     return all;
@@ -357,6 +421,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   }
 
   async function runMatchOnce({ silent } = {}) {
+    if (!silent) await orchestrator.yieldBackground();
     if (matchRunning || orchestrator.isBusy()) {
       const reason = matchRunning ? "上一次匹配尚未结束" : "有其他任务（" + ((orchestrator.getCurrent() || {}).agentName || "智能体") + "）执行中";
       store.set({ bossAiMatchLastSkip: { ts: Date.now(), reason } });
@@ -375,6 +440,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
       if (!keywords.length) return { ok: false, error: "无法从简历提取技能关键词，请完善简历中的技能/经历描述" };
       const city = (() => {
         const cfg = getMatchSettings();
+        if (cfg.city && CITY_CODES[cfg.city.replace(/市$/, "")]) return CITY_CODES[cfg.city.replace(/市$/, "")];
         const fromExtra = extractCityCodeFromExtra(cfg.extra);
         if (fromExtra) return fromExtra;
         try { return new URL(bossView.webContents.getURL()).searchParams.get("city") || "101010100"; } catch (e) { return "101010100"; }
@@ -389,15 +455,26 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
         if (blocked) return { ok: false, error: "职位库检索被拦截：" + blocked + "。请在左侧主窗口正常登录 BOSS 并手动打开一次职位列表后重试" };
         return { ok: false, error: "职位库检索无结果（可能触发验证码，请稍后重试或在 BOSS 页面手动操作一次）" };
       }
-      onStage("已收集 " + jobs.length + " 个候选岗位，开始深度匹配");
-      const res = await orchestrator.invoke("match", { resumeText, jobs: jobs.slice(0, 60), extra: getMatchSettings().extra }, { onProgress: onStage, signal: matchController.signal });
-      const matched = res.matched || [];
+      const Career = require("./core/career");
       const cfg = getMatchSettings();
+      const ignored = new Set((store.get("bossAiCareerJobs") || []).filter(j => j.excluded).map(Career.identity));
+      const available = jobs.filter(j => !ignored.has(Career.identity(j)) && Career.checkConditions(j, cfg).eligible);
+      if (!available.length) return { ok: false, error: "候选岗位均不符合硬性条件，或已被标为不感兴趣，请调整条件" };
+      // 优先匹配标题命中较多的岗位，避免仅按搜索结果先后截断。
+      const relevance = j => keywords.reduce((score, word) => score + (j.title.includes(word) ? 1 : 0), 0);
+      available.sort((a, b) => relevance(b) - relevance(a));
+      const candidates = await enrichJobs(available.slice(0, 60), cfg, matchController.signal, onStage);
+      const eligible = candidates.filter(j => Career.checkConditions(j, cfg).eligible);
+      if (!eligible.length) return { ok: false, error: "补充 JD 后未发现符合硬性条件的岗位" };
+      onStage("已收集 " + jobs.length + " 个岗位，符合初筛 " + eligible.length + " 个，开始评分");
+      const res = await orchestrator.invoke("match", { resumeText, jobs: eligible, extra: cfg.extra, conditions: cfg }, { onProgress: onStage, signal: matchController.signal });
+      const matched = res.matched || [];
       const prevIds = matchLastIds || new Set();
       // 首跑基线：仅当存在历史运行记录时才提示"新发现"，避免首次全量弹横幅
-      const hasBaseline = !!matchLastIds || !!store.get("bossAiMatchLastTs");
+      const hasBaseline = !!matchLastIds;
       const newOnes = hasBaseline ? matched.filter((j) => j.score >= cfg.threshold && !prevIds.has(j.id)) : [];
-      matchLastIds = new Set(matched.map((j) => j.id).filter(Boolean));
+      matchLastIds = new Set([...prevIds, ...matched.map(j => j.id).filter(Boolean)].slice(-5000));
+      store.set({ bossAiMatchSeenIds: [...matchLastIds], bossAiMatchLastResult: { ...res, total: jobs.length, ts: Date.now() } });
       if (!silent) notifyMatchNew(newOnes, cfg.threshold);
       store.set({ bossAiMatchLastTs: Date.now(), bossAiMatchLastNew: newOnes.slice(0, 10), bossAiMatchLastSkip: null });
       return {
@@ -419,36 +496,37 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
     }
   }
 
-  ipcMain.handle("match:run", async () => {
+  handle("match:run", async () => {
     const r = await runMatchOnce({ silent: false });
     return r;
   });
 
-  ipcMain.handle("match:schedule", (_e, cfg) => {
+  handle("match:schedule", (_e, cfg) => {
     const next = { ...getMatchSettings(), ...(cfg || {}) };
     store.set({ [MATCH_SETTINGS_KEY]: next });
     if (matchTimer) { clearInterval(matchTimer); matchTimer = null; }
     if (next.enabled) {
-      const interval = Math.max(5, Number(next.intervalMin) || 30) * 60000;
+      const interval = Math.min(1440, Math.max(5, Number(next.intervalMin) || 30)) * 60000;
       matchTimer = setInterval(() => { runMatchOnce({ silent: false }).catch(() => {}); }, interval);
       logger.info("ipc", "match timer started, interval=", interval / 60000, "min");
     }
     return { ok: true, settings: next };
   });
 
-  ipcMain.handle("match:status", () => ({
+  handle("match:status", () => ({
     ok: true,
     settings: getMatchSettings(),
     lastRunTs: store.get("bossAiMatchLastTs") || null,
     lastNew: store.get("bossAiMatchLastNew") || [],
-    lastSkip: store.get("bossAiMatchLastSkip") || null
+    lastSkip: store.get("bossAiMatchLastSkip") || null,
+    lastResult: store.get("bossAiMatchLastResult") || null
   }));
 
   // 定时器在注册阶段恢复（应用重启后继续生效）
   {
     const cfg = getMatchSettings();
     if (cfg.enabled) {
-      const interval = Math.max(5, Number(cfg.intervalMin) || 30) * 60000;
+      const interval = Math.min(1440, Math.max(5, Number(cfg.intervalMin) || 30)) * 60000;
       matchTimer = setInterval(() => { runMatchOnce({ silent: false }).catch(() => {}); }, interval);
       logger.info("ipc", "match timer restored, interval=", interval / 60000, "min");
     }
@@ -464,21 +542,21 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   logger.info("ipc", "agent events forwarded");
 
   // ---------- 面板/窗口 ----------
-  ipcMain.handle("panel:collapse", () => { setCollapsed(true); layoutViews(); return { ok: true }; });
-  ipcMain.handle("panel:expand", () => { setCollapsed(false); layoutViews(); return { ok: true }; });
+  handle("panel:collapse", () => { setCollapsed(true); layoutViews(); return { ok: true }; });
+  handle("panel:expand", () => { setCollapsed(false); layoutViews(); return { ok: true }; });
 
-  ipcMain.handle("win:pin", () => {
+  handle("win:pin", () => {
     const pinned = !win.isAlwaysOnTop();
     win.setAlwaysOnTop(pinned);
     return { ok: true, pinned };
   });
-  ipcMain.handle("win:set-size", (_e, w, h) => {
+  handle("win:set-size", (_e, w, h) => {
     win.setSize(w, h);
     return { ok: true };
   });
 
   // ---------- BOSS 视图控制 ----------
-  ipcMain.handle("boss:zoom", (_e, level) => {
+  handle("boss:zoom", (_e, level) => {
     const settings = store.getSettings();
     if (level === "auto") {
       delete settings.bossZoom;
@@ -487,47 +565,44 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
     }
     store.set({ bossAiSettings: settings });
     const z = applyZoom();
-    for (const wc of [bossView.webContents, panelView.webContents]) {
-      try { wc.send("store:changed", "bossAiSettings", settings); } catch (e) {}
-    }
+    broadcast("bossAiSettings");
     return { ok: true, zoom: z, manual: typeof settings.bossZoom === "number" };
   });
-  ipcMain.handle("boss:zoom-get", () => {
+  handle("boss:zoom-get", () => {
     const s = store.getSettings();
     return { ok: true, zoom: applyZoom(), manual: typeof s.bossZoom === "number" };
   });
-  ipcMain.handle("boss:reload", () => {
+  handle("boss:reload", () => {
     bossView.webContents.reload();
     return { ok: true };
   });
-  ipcMain.handle("boss:nav", (_e, dir) => {
+  handle("boss:nav", (_e, dir) => {
     if (dir === "back") bossView.webContents.goBack();
     else if (dir === "forward") bossView.webContents.goForward();
     return { ok: true };
   });
-  ipcMain.handle("boss:goto", (_e, url) => {
-    bossView.webContents.loadURL(url || "https://www.zhipin.com/web/geek/chat");
+  handle("boss:goto", (_e, url) => {
+    bossView.webContents.loadURL(jobUrl(url || "https://www.zhipin.com/web/geek/chat")).catch(e => logger.warn("navigation", e.message));
     return { ok: true };
   });
   // 打开岗位详情（匹配结果跳转）：href 为相对路径，拼全域名导航到主视图
-  ipcMain.handle("boss:open-job", (_e, href) => {
+  handle("boss:open-job", (_e, href) => {
     try {
       const h = String(href || "").trim();
       if (!h) return { ok: false, error: "缺少岗位链接" };
-      const full = /^https?:/.test(h) ? h : "https://www.zhipin.com" + h;
-      if (!/zhipin\.com/.test(full)) return { ok: false, error: "非法链接" };
-      bossView.webContents.loadURL(full);
+      const full = jobUrl(h);
+      bossView.webContents.loadURL(full).catch(e => logger.warn("navigation", e.message));
       return { ok: true, url: full };
     } catch (err) {
       return { ok: false, error: String((err && err.message) || err) };
     }
   });
-  ipcMain.handle("boss:zoom-apply", () => ({ ok: true, zoom: applyZoom() }));
+  handle("boss:zoom-apply", () => ({ ok: true, zoom: applyZoom() }));
 
   // ---------- 小红书舆情采集（主视图内打开，记住原页面一键返回） ----------
   const XHS_SEARCH = "https://www.xiaohongshu.com/search_result?keyword=";
   let xhsReturnUrl = null;
-  ipcMain.handle("xhs:open", async (_e, company) => {
+  handle("xhs:open", async (_e, company) => {
     const kw = encodeURIComponent(String(company || "").trim());
     if (!kw) return { ok: false, error: "请输入公司名称" };
     try {
@@ -539,7 +614,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
       return { ok: false, error: String((err && err.message) || err) };
     }
   });
-  ipcMain.handle("xhs:back", async () => {
+  handle("xhs:back", async () => {
     try {
       const target = xhsReturnUrl || "https://www.zhipin.com/web/geek/chat";
       bossView.webContents.loadURL(target);

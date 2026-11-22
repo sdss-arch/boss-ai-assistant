@@ -9,11 +9,7 @@ const {
   isTechJd, isFreshman, extractJdKeywords, extractJdNeeds, rankResume
 } = require("../skills/resume-analysis/index");
 
-const STYLES = {
-  prof: "标准礼貌：像BOSS直聘主流打招呼话术——您好+感兴趣开场，简述经验和优势，请参考简历，期待回复。简洁、正式、有礼",
-  warm: "热情亲和：有礼貌有亲和力，结尾自然邀请，保持简洁不啰嗦",
-  brief: "简洁高效：两三句话讲完，突出最有价值的匹配点，篇幅最短"
-};
+const WritingStyle = require("../core/writing-style");
 
 function recentGreetings(limit = 3) {
   try {
@@ -52,7 +48,7 @@ class GreetingAgent extends AgentBase {
 
   buildSys(settings, hasHighMatch, recent, needs, tech, freshman, execSupport) {
     const s = settings || {};
-    const style = STYLES[s.style] || STYLES.prof;
+    const style = WritingStyle.instruction(s);
 
     // 加载基础模板
     let sys = this.renderPrompt("system.md", {
@@ -85,11 +81,6 @@ class GreetingAgent extends AgentBase {
     ];
 
     sys += this.buildConditionalSections(sections);
-
-    // 用户自定义 prompt
-    if (s.customPrompt && String(s.customPrompt).trim()) {
-      sys += "\n\n【用户自定义要求（必须严格遵守）】\n" + String(s.customPrompt).trim();
-    }
 
     // 最近已发出的招呼语
     if (recent.length) {

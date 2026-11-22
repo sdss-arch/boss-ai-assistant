@@ -18,7 +18,7 @@ class MatchAgent extends AgentBase {
   }
 
   buildMessages(input, ctx) {
-    const { resumeText, jobs, extra } = input || {};
+    const { resumeText, jobs, extra, conditions } = input || {};
     const list = Array.isArray(jobs) ? jobs : [];
     const extraText = String(extra || "").trim();
 
@@ -26,10 +26,12 @@ class MatchAgent extends AgentBase {
     const user =
       "【我的简历（基本信息+项目经验）】\n" + (resumeText || "（未提供简历）") +
       (extraText ? "\n\n【我的补充要求（优先于简历执行）】\n" + extraText : "") +
+      "\n【硬性筛选条件】" + JSON.stringify(conditions || {}) +
       "\n\n【候选岗位列表】\n" + list.map((j, i) =>
         (i + 1) + ". [id:" + (j.id || "") + "] " + (j.title || "未知") + " | " + (j.company || "未知") + " | " + (j.salary || "薪资未知") +
         (j.location ? " | 地点：" + j.location : "") +
-        (j.tags ? " | 标签：" + j.tags : "")
+        (j.tags ? " | 标签：" + j.tags : "") +
+        "\n完整 JD：" + (j.desc ? String(j.desc).slice(0, 2500) : "未获取，仅可初筛，分数不得超过 60")
       ).join("\n") +
       "\n\n请按上述规则逐个思考并打分，输出 JSON。";
 
@@ -65,14 +67,23 @@ class MatchAgent extends AgentBase {
 
   async execute(input, ctx) {
     const res = await super.execute(input, ctx);
-    const matched = this.parseMatched(res.text) || [];
+    const parsed = this.parseMatched(res.text);
+    if (!parsed) throw new Error("模型返回的岗位评分格式无效，请重试");
     const byId = new Map();
     for (const j of (input && input.jobs) || []) {
-      if (j.id) byId.set(String(j.id), j.href || "");
+      if (j.id) byId.set(String(j.id), j);
     }
-    for (const m of matched) {
-      m.href = byId.get(String(m.id)) || "";
-    }
+    const seen = new Set();
+    const { checkConditions } = require("../core/career");
+    const matched = parsed.filter(m => byId.has(m.id) && !seen.has(m.id) && seen.add(m.id)).map(m => {
+      const source = byId.get(m.id);
+      const checks = checkConditions(source, input.conditions);
+      const score = checks.eligible ? (source.desc ? m.score : Math.min(60, m.score)) : 0;
+      return { ...source, score, level: score >= 75 ? "strong" : score >= 60 ? "ok" : "low",
+        reason: m.reason, matchPoints: m.matchPoints.map(String),
+        gaps: [...new Set([...m.gaps.map(String), ...checks.rejected, ...checks.unknown])],
+        confidence: source.desc ? "detail" : "summary" };
+    });
     return { text: res.text, matched, meta: { agent: this.id, agentName: this.name, ...res.meta } };
   }
 }

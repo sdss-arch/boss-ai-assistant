@@ -29,7 +29,7 @@ class Orchestrator extends EventEmitter {
       settings: store.getSettings(),
       llm,
       tools: TOOLS,
-      signal: (extra && extra.signal) || signal,
+      signal: extra?.signal ? AbortSignal.any([extra.signal, signal]) : signal,
       onProgress: extra && extra.onProgress
     };
   }
@@ -55,10 +55,18 @@ class Orchestrator extends EventEmitter {
   }
 
   /** 取消当前任务；无任务或已取消返回 false */
-  cancel() {
+  cancel(reason = "user") {
     if (!this.abort || this.abort.signal.aborted) return false;
+    this.cancelReason = reason;
     this.abort.abort();
     return true;
+  }
+
+  async yieldBackground() {
+    if (!this.busy || !this.current?.background) return;
+    const idle = new Promise(resolve => this.once("agent:idle", resolve));
+    this.cancel("preempted");
+    await idle;
   }
 
   clearLog() {
@@ -69,6 +77,9 @@ class Orchestrator extends EventEmitter {
   async invoke(intent, input, extra = {}) {
     const agent = registry.get(intent);
     if (!agent) throw new Error("未知智能体：" + intent);
+    if (this.busy && this.current?.background && !extra.background) {
+      await this.yieldBackground();
+    }
     if (this.busy) {
       const cur = this.current;
       throw new Error(cur ? "已有任务执行中（" + cur.agentName + "），请先停止再继续" : "已有任务执行中，请稍候");
@@ -76,12 +87,13 @@ class Orchestrator extends EventEmitter {
     this.busy = true;
     const controller = new AbortController();
     this.abort = controller;
-    this.current = { intent, agentName: agent.name, ts: Date.now() };
+    this.cancelReason = "";
+    this.current = { intent, agentName: agent.name, ts: Date.now(), task: input?.task, background: !!extra.background };
     const started = Date.now();
     const ctx = this._ctxFor(extra, controller.signal);
-    this.emit("agent:start", { intent, agentName: agent.name, ts: started });
-    this._logEntry({ type: "start", intent, agent: agent.id, agentName: agent.name, task: String(input || "").slice(0, 200) });
     try {
+      this.emit("agent:start", { intent, agentName: agent.name, ts: started });
+      this._logEntry({ type: "start", intent, agent: agent.id, agentName: agent.name });
       const res = await agent.execute(input, ctx);
       this._logEntry({ type: "done", intent, agent: agent.id, ms: Date.now() - started, chars: res.text.length });
       this.emit("agent:done", { intent, agentName: agent.name, ms: Date.now() - started });
@@ -90,7 +102,9 @@ class Orchestrator extends EventEmitter {
       if (controller.signal.aborted || (ctx.signal && ctx.signal.aborted)) {
         this._logEntry({ type: "cancelled", intent, agent: agent.id, ms: Date.now() - started });
         this.emit("agent:cancelled", { intent, agentName: agent.name, ms: Date.now() - started });
-        throw new Error("任务已停止");
+        const stopped = new Error("任务已停止");
+        stopped.code = this.cancelReason === "preempted" ? "BACKGROUND_PREEMPTED" : "TASK_CANCELLED";
+        throw stopped;
       }
       logger.error("orchestrator", intent, "failed:", err.message);
       this._logEntry({ type: "error", intent, agent: agent.id, error: String((err && err.message) || err) });
@@ -100,6 +114,7 @@ class Orchestrator extends EventEmitter {
       this.busy = false;
       this.abort = null;
       this.current = null;
+      this.emit("agent:idle");
     }
   }
 }

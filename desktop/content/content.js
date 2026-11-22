@@ -6,6 +6,26 @@
 
   let settings = null;
   let filterState = null;
+  let autoDraft = null;
+
+  function visiblePageJob() {
+    const jd = extractJobInfo();
+    if (jd.hasJd) return jd;
+    const ctx = extractChatContext();
+    if (ctx && ctx.title) return { hasJd: true, title: ctx.title, company: ctx.company, salary: ctx.salary, desc: ctx.jdDesc || "", href: document.querySelector(".chat-conversation a[href*='job_detail']")?.href || "", via: "current-chat" };
+    return { hasJd: false, title: "", company: "" };
+  }
+  let contextTimer, lastContextSignature = "";
+  function notifyPageContext() {
+    clearTimeout(contextTimer);
+    contextTimer = setTimeout(() => {
+      const jd = visiblePageJob(), signature = JSON.stringify({ jd, history: isChatPage() ? collectConversation() : [] });
+      if (signature !== lastContextSignature) {
+        lastContextSignature = signature;
+        chrome.runtime.sendMessage({ type: "page-context-changed" }).catch(() => {});
+      }
+    }, 450);
+  }
 
   // ---------- 基础工具 ----------
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -14,7 +34,7 @@
   function pickText(selectors, root = document) {
     for (const sel of selectors) {
       const el = root.querySelector(sel);
-      if (el && el.textContent && el.textContent.trim()) {
+      if (el && isVisible(el) && el.textContent && el.textContent.trim()) {
         return el.textContent.trim().replace(/\s+/g, " ").replace(/\u200b/g, "");
       }
     }
@@ -25,6 +45,7 @@
     for (const sel of selectors) {
       const els = root.querySelectorAll(sel);
       const arr = Array.from(els)
+        .filter(isVisible)
         .map((el) => el.textContent.trim().replace(/\s+/g, " "))
         .filter(Boolean);
       if (arr.length) return arr;
@@ -38,6 +59,7 @@
 
   /** 当前生效的简历文本（多简历：优先 activeResumeId，回退旧 resumeText） */
   function hasResumeText(s) {
+    if (typeof s.hasResume === "boolean") return s.hasResume;
     const list = Array.isArray(s.resumes) ? s.resumes : [];
     const active = list.find((r) => r && r.id === s.activeResumeId) || list[0];
     if (active && String(active.text || "").trim()) return true;
@@ -48,7 +70,8 @@
     const data = await chrome.storage.local.get(STORE_KEY);
     const s = data[STORE_KEY] || {};
     settings = {
-      apiKey: s.apiKey || "",
+      apiKey: s.hasApiKey ? "configured" : "",
+      hasResume: !!s.hasResume,
       model: s.model || "deepseek-chat",
       style: s.style || "prof",
       customPrompt: s.customPrompt || "",
@@ -100,16 +123,16 @@
     if (!/web\/geek\/jobs(?:\?|$)|web\/geek\/job\?/.test(location.href)) return null;
     const isVis = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
     const root = (() => {
-      const act = document.querySelector(".job-card-wrap.active");
+      const act = document.querySelector(".job-card-wrap.active, .job-card-box.active, .job-card-box.selected, .job-card-box[aria-selected=\"true\"]");
       if (act && isVis(act)) return act;
-      return [...document.querySelectorAll("li.job-card-box")].filter(isVis)[0] || null;
+      return null;
     })();
     if (!root) return null;
     const title = pickText([".job-name", "a.job-name"], root) || "";
     const salary = decodePuaSalary((root.querySelector(".job-salary") || { textContent: "" }).textContent).trim();
-    const company = pickText([".boss-info .boss-name", ".boss-name"], root);
+    const company = pickText([".company-name", ".company-info a"], root);
     const tags = pickTextList([".tag-list li"], root).slice(0, 5);
-    return { hasJd: !!title, title, salary, company, tags: tags.join("、"), desc: "" };
+    return { hasJd: !!title, title, salary, company, tags: tags.join("、"), desc: "", href: root.querySelector("a.job-name")?.href || "" };
   }
 
   // ---------- 新版聊天页 API 提取（BOSS 新版 DOM 无职位卡片，走官方接口） ----------
@@ -141,7 +164,10 @@
 
   function jdFromFriends(friends) {
     if (!friends || !friends.length) return null;
-    const top = friends.slice().sort((a, b) => (b.updateTime || 0) - (a.updateTime || 0))[0];
+    const query = new URL(location.href).searchParams;
+    const id = query.get("bossId") || query.get("friendId") || query.get("encryptBossId") || query.get("encryptFriendId");
+    const top = id ? friends.find(f => String(f.friendId) === id || f.encryptFriendId === id) : null;
+    if (!top) return null;
     return {
       hasJd: true,
       via: "api",
@@ -158,6 +184,8 @@
   async function extractJobInfoAsync() {
     const dom = extractJobInfo();
     if (dom && dom.hasJd) return dom;
+    const visible = visiblePageJob();
+    if (visible.hasJd) return visible;
     if (/web\/geek\/chat/.test(location.href)) {
       const friends = await fetchFriendList();
       const apiJd = jdFromFriends(friends);
@@ -173,7 +201,7 @@
     const mR = String(salaryTxt).match(/(\d+)\s*[-~—至]\s*(\d+)\s*[Kk]/);
     return {
       title,
-      company: pickText([".boss-info .boss-name", ".boss-name"], li) || "",
+      company: pickText([".company-name", ".company-info a"], li) || "",
       tags: pickTextList([".tag-list li"], li).join(" "),
       salMin: mR ? Number(mR[1]) : 0,
       salMax: mR ? Number(mR[2]) : 0
@@ -241,7 +269,7 @@
 
   function extractJobInfo() {
     const listJd = extractJobInfoFromListPage();
-    if (listJd) return listJd;
+    if (listJd && !document.querySelector(".job-detail .job-sec-text, .job-detail-section .job-sec-text")) return listJd;
     const EX = ":not([class*='similar']):not([class*='guide'])";
 
     const title = pickText([
@@ -270,7 +298,7 @@
 
     const onDetail = isJobDetailPage() || !!document.querySelector(".job-detail:not([class*='guide']), .job-primary.detail-box");
     const hasJd = onDetail && !!(title && (desc || salary));
-    return { hasJd, title, salary, company, tags: tags.join("、"), desc };
+    return { hasJd, title, salary, company, tags: tags.join("、"), desc, href: location.href };
   }
 
   // ---------- 聊天消息采集 ----------
@@ -372,7 +400,7 @@
   // ---------- 聊天会话上下文（面试准备用） ----------
   function extractChatContext() {
     const conv = document.querySelector(".chat-conversation");
-    if (!conv) return null;
+    if (!conv || !isVisible(conv)) return null;
     const pick = (sel) => {
       const el = conv.querySelector(sel);
       return el && el.textContent ? el.textContent.trim().replace(/\s+/g, " ") : "";
@@ -960,8 +988,9 @@
     observer = new MutationObserver(() => {
       const nodes = collectMsgNodes();
       if (nodes.length) onNewIncomingMsg();
+      notifyPageContext();
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "aria-selected"] });
   }
 
   // ---------- 清理已读不回（超过1天） ----------
@@ -1151,6 +1180,9 @@
   // ---------- 操作台消息桥（面板窗口 ≈ 当前页） ----------
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || !msg.type) return;
+    if (msg.type === "get-page-context") {
+      sendResponse({ ok: true, jd: visiblePageJob(), history: isChatPage() ? collectConversation().slice(-20) : [], isChat: isChatPage() }); return;
+    }
     if (msg.type === "getJd") {
       extractJobInfoAsync().then((jd) => sendResponse({ ok: true, jd }));
       return true;
@@ -1161,6 +1193,21 @@
            .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
       });
       return true;
+    } else if (msg.type === "fill-if-empty") {
+      const jd = visiblePageJob(), last = collectConversation().at(-1), expected = msg.expected || {};
+      if (!isChatPage() || !jd.hasJd || jd.title !== expected.title || jd.company !== expected.company ||
+          !last || last.self || last.text !== expected.lastText) { sendResponse({ ok: true, filled: false, reason: "context-changed" }); return; }
+      const input = findInputBox();
+      if (!input) { sendResponse({ ok: true, filled: false, reason: "input-missing" }); return; }
+      const text = input.value !== undefined ? input.value : input.innerText || "";
+      const peer = JSON.stringify([jd.title, jd.company, jd.href]);
+      const ownDraft = autoDraft?.input === input && autoDraft.peer === peer && text === autoDraft.text;
+      if (input === document.activeElement || input.contains(document.activeElement) || (text.trim() && !ownDraft)) {
+        sendResponse({ ok: true, filled: false, reason: "input-being-edited" }); return;
+      }
+      const ok = setInputText(input, msg.text);
+      if (ok) autoDraft = { input, peer, text: msg.text };
+      sendResponse({ ok, filled: ok });
     } else if (msg.type === "fill-input") {
       if (!isChatPage()) { sendResponse({ ok: false, error: "未找到聊天输入框，请打开聊天窗口" }); return; }
       const input = findInputBox();
@@ -1177,7 +1224,7 @@
       goChatAndFill(msg.text).then(() => sendResponse({ ok: true }));
       return true;
     } else if (msg.type === "send-resume-image") {
-      chrome.runtime.sendMessage({ type: "read-image", id: msg.id }).then((res) => {
+      Promise.resolve(msg.image && { ok: true, ...msg.image }).then((res) => {
         if (!res || !res.ok) { sendResponse({ ok: false, error: "图片不存在" }); return; }
         if (!isChatPage()) { sendResponse({ ok: false, error: "未找到聊天输入框，请打开聊天窗口" }); return; }
         const input = findFileInput();
@@ -1227,7 +1274,7 @@
           salary: String(salaryTxt).trim(),
           salaryMin: mR ? Number(mR[1]) : 0,
           salaryMax: mR ? Number(mR[2]) : 0,
-          company: pickText([".boss-info .boss-name", ".boss-name"], li) || "",
+          company: pickText([".company-name", ".company-info a"], li) || "",
           tags: pickTextList([".tag-list li"], li).join("、"),
           href: href
         });
@@ -1262,6 +1309,7 @@
   (async () => {
     await loadSettings();
     startObserving();
+    notifyPageContext();
     autoFillFromMarker();
     setTimeout(() => {
       showHint();

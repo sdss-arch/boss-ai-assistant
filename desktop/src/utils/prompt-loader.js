@@ -48,7 +48,7 @@ class PromptLoader {
   render(agentId, filename, vars = {}) {
     let content = this.load(agentId, filename);
     for (const [k, v] of Object.entries(vars)) {
-      content = content.replace(new RegExp(`\\{\\{${k}\\}\\}`, "g"), v);
+      content = content.replace(new RegExp(`\\{\\{${k}\\}\\}`, "g"), () => String(v));
     }
     return content;
   }

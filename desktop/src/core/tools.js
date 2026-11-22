@@ -10,7 +10,8 @@ const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 async function fetchText(url, opts = {}) {
   const outer = opts.signal || null;
   const timeout = AbortSignal.timeout(15000);
-  const abort = outer && !outer.aborted ? AbortSignal.any([outer, timeout]) : timeout;
+  if (outer?.aborted) throw new Error("任务已取消");
+  const abort = outer ? AbortSignal.any([outer, timeout]) : timeout;
   const res = await fetch(url, {
     headers: {
       "User-Agent": opts.ua || UA,
