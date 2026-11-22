@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题 / 漏洞报告
+    url: https://github.com/sdss-arch/boss-ai-assistant/security/advisories/new
+    about: 请勿公开披露漏洞，使用私有 Security Advisory 提交。
+  - name: 使用咨询与讨论
+    url: https://github.com/sdss-arch/boss-ai-assistant/discussions
+    about: 环境问题、使用技巧与经验分享请到 Discussions。
