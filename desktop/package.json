@@ -8,10 +8,13 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win portable",
+    "check": "node ../scripts/check-syntax.cjs",
     "test": "jest",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
-    "test:desktop": "node tests/desktop.smoke.cjs"
+    "test:desktop": "node tests/desktop.smoke.cjs",
+    "verify": "npm run check && npm test -- --runInBand && npm run test:desktop",
+    "capture:screenshots": "node ../scripts/capture-screenshots.cjs"
   },
   "build": {
     "appId": "com.bossai.desktop",

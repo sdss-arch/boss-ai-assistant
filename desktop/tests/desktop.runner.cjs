@@ -133,6 +133,21 @@ app.whenReady().then(async () => {
     console.log(result);
     await fs.mkdir(path.resolve(__dirname, "../test-results"), { recursive: true });
 
+    // 可选的截图模式：由 scripts/capture-screenshots.cjs 触发，使用 mock 数据。
+    if (process.env.BOSS_AI_CAPTURE_DIR) {
+      const dir = process.env.BOSS_AI_CAPTURE_DIR;
+      await fs.mkdir(dir, { recursive: true });
+      const snap = async (tab, file) => {
+        await panel.executeJavaScript(`showTab(${JSON.stringify(tab)}); void 0`);
+        await new Promise(resolve => setTimeout(resolve, 900));
+        await fs.writeFile(path.join(dir, file), (await panel.capturePage()).toPNG());
+        console.log("capture: " + file);
+      };
+      await snap("assist", "01-web-assistant.png");
+      await snap("workbench", "02-workbench.png");
+      await snap("settings", "03-settings.png");
+    }
+
     app.quit();
   } catch (err) { console.error(err); app.exit(1); }
 });
