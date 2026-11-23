@@ -3,6 +3,7 @@
 
   const STORE_KEY = "bossAiSettings";
   const HISTORY_CAP = 50;
+  const WIDGET_KEY = "bossAiWidget";
 
   let settings = null;
   let filterState = null;
@@ -70,7 +71,7 @@
     const data = await chrome.storage.local.get(STORE_KEY);
     const s = data[STORE_KEY] || {};
     settings = {
-      apiKey: s.hasApiKey ? "configured" : "",
+      apiKey: (s.modelReady ?? s.hasApiKey) ? "configured" : "",
       hasResume: !!s.hasResume,
       model: s.model || "deepseek-chat",
       style: s.style || "prof",
@@ -89,6 +90,7 @@
 
   // 设置页保存后实时生效（无需刷新 BOSS 页面）
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[WIDGET_KEY]) applyWidgetState(changes[WIDGET_KEY].newValue);
     if (area !== "local" || !changes[STORE_KEY]) return;
     loadSettings().then(() => {
       try {
@@ -435,6 +437,8 @@
   function splitVersions(text) {
     const t = (text || "").trim();
     if (!t) return [];
+    const structured = GreetingFormat.parse(t);
+    if (structured.length) return structured.map(version => version.text).filter(Boolean);
     const marker = /^\s*(?:【\s*(?:版本\s*)?[0-9一二三四五六七八九十]+\s*】|版本\s*[0-9一二三四五六七八九十]+\s*[：:、.．]?|第\s*[0-9一二三四五六七八九十]+\s*(?:个版本|版)\s*[：:、.．]?|[0-9一二三四五六七八九十]+\s*[、.．:：])\s*/;
     const versions = [];
     let cur = "";
@@ -526,11 +530,17 @@
     <style>
       :host { all: initial; }
       * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
-      .fab { position: fixed; right: 24px; bottom: 90px; z-index: 2147483647; width: 52px; height: 52px; border-radius: 50%;
-             background: linear-gradient(135deg, #1e6fff, #0b4fd6); color: #fff; border: none; cursor: pointer;
+      [hidden] { display: none !important; }
+      .fab-wrap { position: fixed; right: 24px; bottom: 90px; z-index: 2147483647; width: 52px; height: 52px; }
+      .fab { width: 52px; height: 52px; border-radius: 50%; position: relative;
+             background: linear-gradient(135deg, #1e6fff, #0b4fd6); color: #fff; border: none; cursor: grab; touch-action: none; user-select: none;
              box-shadow: 0 4px 16px rgba(14, 80, 214, .45); font-size: 22px; display: flex; align-items: center; justify-content: center;
-             transition: transform .15s; }
-      .fab:hover { transform: scale(1.08); }
+             transition: box-shadow .15s; }
+      .fab:hover { box-shadow: 0 5px 20px rgba(14, 80, 214, .6); }
+      .fab.dragging { cursor: grabbing; }
+      .fab-close { position: absolute; top: -10px; right: -10px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid #ccd4df; background: #fff; color: #556; font-size: 17px; line-height: 18px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+      .fab-close:hover { background: #fff0f0; color: #c33; }
+      button:focus-visible { outline: 2px solid #1e6fff; outline-offset: 3px; }
       .panel { position: fixed; right: 24px; bottom: 152px; z-index: 2147483647; width: 380px; max-height: 520px; display: none;
                flex-direction: column; background: #fff; border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.22);
                border: 1px solid #e4e8f0; overflow: hidden; font-size: 13px; }
@@ -538,7 +548,7 @@
       .head { background: linear-gradient(135deg, #1e6fff, #0b4fd6); color: #fff; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
       .head .t { font-weight: 700; font-size: 14px; }
       .head .close { background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; line-height: 1; }
-      .body { padding: 12px; overflow-y: auto; flex: 1; }
+      .body { padding: 12px; overflow-y: auto; flex: 1; min-height: 0; }
       .row { display: flex; gap: 8px; margin-bottom: 10px; }
       .btn { flex: 1; padding: 9px 0; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
       .btn.primary { background: #1e6fff; color: #fff; }
@@ -585,9 +595,12 @@
       .img-item:hover .img-del { display: block; }
       .img-empty { color: #99a; font-size: 11px; text-align: center; padding: 6px 0; }
     </style>
-    <button class="fab" title="BOSS AI 助手">AI<span class="fab-dot" data-el="fabDot" style="display:none"></span></button>
+    <div class="fab-wrap" hidden>
+      <button class="fab" type="button" title="BOSS AI 助手：点击打开，按住拖动" aria-label="打开 AI 沟通助手" aria-expanded="false">AI<span class="fab-dot" data-el="fabDot" style="display:none"></span></button>
+      <button class="fab-close" type="button" title="关闭悬浮按钮，可在右侧设置重新显示" aria-label="关闭悬浮按钮">×</button>
+    </div>
     <div class="panel">
-      <div class="head"><span class="t">AI 沟通助手</span><button class="close">×</button></div>
+      <div class="head"><span class="t">AI 沟通助手</span><button class="close" title="收起沟通面板" aria-label="收起沟通面板">×</button></div>
       <div class="body">
         <div class="status hint"></div>
         <div class="img-bank">
@@ -624,6 +637,8 @@
   `;
 
   const els = {
+    fabWrap: shadow.querySelector(".fab-wrap"),
+    fabClose: shadow.querySelector(".fab-close"),
     fab: shadow.querySelector(".fab"),
     panel: shadow.querySelector(".panel"),
     close: shadow.querySelector(".close"),
@@ -641,6 +656,83 @@
     imgGrid: shadow.querySelector('[data-el="imgGrid"]')
   };
 
+  // 悬浮入口独立保存，不读写包含简历和密钥的设置。
+  let widgetState = { hidden: false }, widgetDrag = null, suppressClickUntil = 0;
+  let widgetSaveQueue = Promise.resolve();
+  const widgetMargin = 14, widgetSize = 52;
+  function widgetBounds() {
+    return { maxX: Math.max(widgetMargin, innerWidth - widgetSize - widgetMargin), maxY: Math.max(widgetMargin, innerHeight - widgetSize - widgetMargin) };
+  }
+  function placeWidget(x, y) {
+    const { maxX, maxY } = widgetBounds();
+    const left = Math.max(widgetMargin, Math.min(maxX, x)), top = Math.max(widgetMargin, Math.min(maxY, y));
+    Object.assign(els.fabWrap.style, { left: left + "px", top: top + "px", right: "auto", bottom: "auto" });
+    for (const [popup, width] of [[els.panel, 380], [els.notif, 340]]) {
+      const availableWidth = Math.max(1, innerWidth - widgetMargin * 2);
+      popup.style.width = Math.min(width, availableWidth) + "px";
+      popup.style.maxHeight = Math.max(1, Math.min(520, innerHeight - widgetMargin * 2)) + "px";
+      popup.style.overflowY = popup === els.notif ? "auto" : "hidden";
+      const rect = popup.getBoundingClientRect();
+      const popupX = Math.max(widgetMargin, Math.min(innerWidth - rect.width - widgetMargin, left + widgetSize - rect.width));
+      let popupY = top - rect.height - 10;
+      if (popupY < widgetMargin && top + widgetSize + 10 + rect.height <= innerHeight - widgetMargin) popupY = top + widgetSize + 10;
+      popupY = Math.max(widgetMargin, Math.min(innerHeight - rect.height - widgetMargin, popupY));
+      Object.assign(popup.style, { left: popupX + "px", top: popupY + "px", right: "auto", bottom: "auto" });
+    }
+    return { left, top };
+  }
+  function layoutWidget() {
+    if (widgetDrag?.moved) { placeWidget(widgetDrag.left, widgetDrag.top); return; }
+    const { maxX, maxY } = widgetBounds();
+    placeWidget(Number.isFinite(widgetState.x) ? widgetMargin + widgetState.x * (maxX - widgetMargin) : innerWidth - 76,
+      Number.isFinite(widgetState.y) ? widgetMargin + widgetState.y * (maxY - widgetMargin) : innerHeight - 142);
+  }
+  function applyWidgetState(value) {
+    widgetState = { hidden: value?.hidden === true };
+    if (Number.isFinite(value?.x) && Number.isFinite(value?.y)) {
+      widgetState.x = Math.max(0, Math.min(1, value.x)); widgetState.y = Math.max(0, Math.min(1, value.y));
+    }
+    els.fabWrap.hidden = widgetState.hidden; els.panel.hidden = widgetState.hidden; els.notif.hidden = widgetState.hidden;
+    if (widgetState.hidden) { els.panel.classList.remove("open"); els.notif.classList.remove("open"); els.fab.setAttribute("aria-expanded", "false"); }
+    layoutWidget();
+  }
+  function saveWidgetState() {
+    const snapshot = { ...widgetState };
+    widgetSaveQueue = widgetSaveQueue.catch(() => {}).then(() => chrome.storage.local.set({ [WIDGET_KEY]: snapshot }));
+    widgetSaveQueue.catch(err => console.warn("[BOSS AI] 悬浮按钮状态保存失败", err.message));
+  }
+  els.fab.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || event.isPrimary === false || widgetDrag) return;
+    const rect = els.fabWrap.getBoundingClientRect();
+    widgetDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, originLeft: rect.left, originTop: rect.top, moved: false };
+    try { els.fab.setPointerCapture(event.pointerId); } catch {}
+  });
+  els.fab.addEventListener("pointermove", event => {
+    if (!widgetDrag || widgetDrag.id !== event.pointerId) return;
+    const dx = event.clientX - widgetDrag.x, dy = event.clientY - widgetDrag.y;
+    if (!widgetDrag.moved && Math.hypot(dx, dy) < 5) return;
+    widgetDrag.moved = true; event.preventDefault(); els.fab.classList.add("dragging");
+    const position = placeWidget(widgetDrag.originLeft + dx, widgetDrag.originTop + dy);
+    widgetDrag.left = position.left; widgetDrag.top = position.top;
+  });
+  function finishWidgetDrag(event) {
+    if (!widgetDrag || widgetDrag.id !== event.pointerId) return;
+    const drag = widgetDrag; widgetDrag = null; els.fab.classList.remove("dragging");
+    if (drag.moved) {
+      suppressClickUntil = performance.now() + 700;
+      const { maxX, maxY } = widgetBounds();
+      widgetState.x = (drag.left - widgetMargin) / Math.max(1, maxX - widgetMargin);
+      widgetState.y = (drag.top - widgetMargin) / Math.max(1, maxY - widgetMargin);
+      saveWidgetState(); layoutWidget();
+    }
+    try { if (els.fab.hasPointerCapture(event.pointerId)) els.fab.releasePointerCapture(event.pointerId); } catch {}
+  }
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) els.fab.addEventListener(type, finishWidgetDrag);
+  els.fabClose.addEventListener("click", () => { applyWidgetState({ ...widgetState, hidden: true }); saveWidgetState(); });
+  window.addEventListener("resize", layoutWidget);
+  new ResizeObserver(layoutWidget).observe(els.panel);
+  new ResizeObserver(layoutWidget).observe(els.notif);
+
   function setStatus(text, isErr) {
     els.status.textContent = text || "";
     els.status.className = "status" + (isErr ? " err" : "");
@@ -651,7 +743,7 @@
     const jd = extractJobInfo();
     const parts = [];
     parts.push(hasResumeText(s) ? "简历 ●" : "简历 ○");
-    parts.push(s.apiKey ? "API Key ●" : "API Key ○");
+    parts.push(s.apiKey ? "模型 ●" : "模型 ○");
     parts.push(jd.hasJd ? "已识别JD ●" : "未识别到JD");
     els.hint.textContent = parts.join("  ·  ") + "（在设置页配置）";
     els.hint.style.cursor = "pointer";
@@ -730,7 +822,7 @@
       (res.jd.company ? " · " + res.jd.company : "") +
       "<br>" + (res.jd.desc ? truncate(res.jd.desc, 120) : "未获取到职位描述");
     c.appendChild(jdBox);
-    res.versions.forEach((v, i) => c.appendChild(versionCard("招呼语 " + (i + 1), v, "greeting")));
+    res.versions.forEach((v, i) => c.appendChild(versionCard(GreetingFormat.title(i, res.versions.length), v, "greeting")));
   }
 
   function versionCard(tag, text, kind) {
@@ -788,7 +880,7 @@
       (job.company ? " · " + job.company : "");
     els.pendingList.innerHTML = "";
     data.versions.forEach((v, i) => {
-      els.pendingList.appendChild(versionCard("招呼语 " + (i + 1), v, "greeting"));
+      els.pendingList.appendChild(versionCard(GreetingFormat.title(i, data.versions.length), v, "greeting"));
     });
     const discard = document.createElement("button");
     discard.className = "mini";
@@ -814,7 +906,7 @@
     await loadSettings();
     const s = getSettings();
     if (!s.apiKey) {
-      setStatus("未配置 API Key，请先打开设置页填写", true);
+      setStatus("尚未配置可用模型，请先打开设置页选择并测试", true);
       return;
     }
     if (kind === "greeting" && !hasResumeText(s)) {
@@ -965,7 +1057,7 @@
     lastNotifyTs = now;
 
     els.nsub.textContent = truncate(text, 60);
-    els.notif.classList.add("open");
+    if (!widgetState.hidden) els.notif.classList.add("open");
     const jd = extractJobInfo();
     els.notif.dataset.job = JSON.stringify({ title: jd.title, company: jd.company, salary: jd.salary, desc: jd.desc, tags: jd.tags });
     if (s.notifySound) beep();
@@ -1142,8 +1234,10 @@
   }
 
   // ---------- 事件绑定 ----------
-  els.fab.addEventListener("click", () => {
+  els.fab.addEventListener("click", event => {
+    if (event.detail !== 0 && performance.now() < suppressClickUntil) { event.preventDefault(); return; }
     const open = els.panel.classList.toggle("open");
+    els.fab.setAttribute("aria-expanded", String(open));
     if (open) {
       showHint();
       renderPending();
@@ -1151,8 +1245,9 @@
       els.content.innerHTML = "";
       setStatus("");
     }
+    layoutWidget();
   });
-  els.close.addEventListener("click", () => els.panel.classList.remove("open"));
+  els.close.addEventListener("click", () => { els.panel.classList.remove("open"); els.fab.setAttribute("aria-expanded", "false"); });
   els.panel.addEventListener("click", (e) => {
     const act = e.target.closest("[data-act]");
     if (!act) return;
@@ -1180,6 +1275,11 @@
   // ---------- 操作台消息桥（面板窗口 ≈ 当前页） ----------
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || !msg.type) return;
+    if (["online-resume:read", "online-resume:fill", "online-resume:restore"].includes(msg.type)) {
+      const action = msg.type.split(":")[1];
+      Promise.resolve().then(() => window.BossOnlineResume[action](msg)).then(sendResponse).catch(error => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
     if (msg.type === "get-page-context") {
       sendResponse({ ok: true, jd: visiblePageJob(), history: isChatPage() ? collectConversation().slice(-20) : [], isChat: isChatPage() }); return;
     }
@@ -1300,6 +1400,7 @@
     if (act.dataset.act === "gen-reply") {
       els.notif.classList.remove("open");
       els.panel.classList.add("open");
+      els.fab.setAttribute("aria-expanded", "true"); layoutWidget();
       runAction("reply");
     }
   });
@@ -1307,6 +1408,8 @@
 
   // ---------- 初始化 ----------
   (async () => {
+    const widgetData = await chrome.storage.local.get(WIDGET_KEY);
+    applyWidgetState(widgetData[WIDGET_KEY]);
     await loadSettings();
     startObserving();
     notifyPageContext();
