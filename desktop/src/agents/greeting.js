@@ -1,141 +1,58 @@
-/**
- * GreetingAgent v6（重构版）：
- * 使用 AgentBase + prompt 模板 + resume-analysis skill
- */
 const { AgentBase } = require("./agent-base");
 const store = require("../core/store");
-const {
-  SKILL_WORDS, TECH_TERMS, SOFT_TERMS, EXEC_SUPPORT_TERMS,
-  isTechJd, isFreshman, extractJdKeywords, extractJdNeeds, rankResume
-} = require("../skills/resume-analysis/index");
-
 const WritingStyle = require("../core/writing-style");
-
-function recentGreetings(limit = 3) {
-  try {
-    const list = store.get("bossAiHistory") || [];
-    return list.filter((h) => h && h.kind === "greeting" && h.result).slice(0, limit).map((h) => h.result.slice(0, 220));
-  } catch (e) {
-    return [];
-  }
-}
-
-function extractVersionTexts(text) {
-  const t = String(text || "");
-  const re = /【\s*版本\s*[0-9一二三四五六七八九十]+\s*】/g;
-  const out = [];
-  let last = null;
-  let m;
-  while ((m = re.exec(t))) {
-    if (last) out.push(t.slice(last.end, m.index).trim());
-    last = { end: m.index + m[0].length };
-  }
-  if (last) out.push(t.slice(last.end).trim());
-  return out.filter((s) => s.length >= 10);
-}
-
+const Format = require("../core/greeting-format");
+const Evidence = require("../core/greeting-evidence");
+const Models = require("../core/model-config");
+function extractVersionTexts(text) { return Format.parse(text).map(v=>v.text).filter(text=>text.trim()); }
 class GreetingAgent extends AgentBase {
-  constructor({ learningAdapter } = {}) {
-    super({
-      id: "greeting",
-      name: "招呼语专家",
-      role: "求职沟通文案撰写",
-      description: "基于职位信息与简历，生成两版像真人说的招呼语",
-      temperature: 0.8,
-      learningAdapter
-    });
+  constructor({learningAdapter}={}) {
+    super({id:"greeting",name:"招呼语专家",role:"求职沟通撰写",description:"根据岗位写自然开场消息，并独立核对事实与关联",temperature:0.65,learningAdapter});
+    this.reasoningEffort="low";
   }
-
-  buildSys(settings, hasHighMatch, recent, needs, tech, freshman, execSupport) {
-    const s = settings || {};
-    const style = WritingStyle.instruction(s);
-
-    // 加载基础模板
-    let sys = this.renderPrompt("system.md", {
-      style,
-      forbiddenWords: require("../skills/communication/index").DEFAULT_FORBIDDEN.join("、")
-    });
-
-    // 追加条件段落
-    const sections = [
-      {
-        condition: !hasHighMatch,
-        content: "\n注意：简历与岗位交集较少时，可以坦然说明没有直接经验，同时亮出兴趣、学习能力和可迁移技能，不编造经历。"
-      },
-      {
-        condition: freshman,
-        content: "\n\n【身份策略：应届生】HR 在 BOSS 页面上能看到你的应届生身份，文案里不必再声明\"我是应届生\"。重点阐述实习经历、技能和潜力，用做过的事证明能力，收尾用\"请参考我的简历，期待您的回复！\""
-      },
-      {
-        condition: execSupport,
-        content: "\n\n【岗位类型：执行支撑岗（助理/文员/行政类）】这类岗位核心是细心、执行到位、靠谱、能补位。价值主张围绕：做事细致不出错、交代的事有回音。不要讲\"独立带队/操盘项目/战略\"这类话。"
-      },
-      {
-        condition: !tech,
-        content: "\n\n【岗位类型判定：非技术岗】全文禁止出现简历里的技术名词和项目技术细节，重点论证通用素质与岗位的匹配：沟通表达、服务意识、耐心、执行力、责任心。"
-      },
-      {
-        condition: !hasHighMatch,
-        content: "\n\n【简历与岗位交集较少（策略：坦诚+学习能力）】可以说\"没有直接做过XX方向\"，但要立刻接上兴趣+学得快+可迁移技能。简历与岗位毫无交集时，就讲通用素质+礼貌收尾，不编经历。"
-      }
-    ];
-
-    sys += this.buildConditionalSections(sections);
-
-    // 最近已发出的招呼语
-    if (recent.length) {
-      sys += "\n\n【最近已发出的招呼语（严禁与它们开场方式、结构、句式雷同）】\n" + recent.map((t, i) => (i + 1) + ". " + t).join("\n");
+  buildSys(settings) { return this.renderPrompt("system.md",{style:WritingStyle.instruction(settings||{})}); }
+  responseSchema(input) {
+    const ids=input.evidenceData.facts.map(f=>f.id);
+    return {type:"object",properties:{versions:{type:"array",minItems:3,maxItems:3,items:{type:"object",properties:{text:{type:"string"},evidenceIds:{type:"array",items:{type:"string",enum:ids},minItems:1}},required:["text","evidenceIds"],additionalProperties:false}}},required:["versions"],additionalProperties:false};
+  }
+  reviewSchema(data) {
+    return {type:"object",properties:{distinct:{type:"boolean"},checks:{type:"array",minItems:3,maxItems:3,items:{type:"object",properties:{index:{type:"integer",enum:[1,2,3]},natural:{type:"boolean"},jobFit:{type:"string",enum:["direct","transferable","weak"]},issues:{type:"array",items:{type:"string"}},claims:{type:"array",items:{type:"object",properties:{text:{type:"string"},sourceIds:{type:"array",items:{type:"string",enum:data.facts.map(f=>f.id)}},supported:{type:"boolean"}},required:["text","sourceIds","supported"],additionalProperties:false}}},required:["index","natural","jobFit","issues","claims"],additionalProperties:false}}},required:["distinct","checks"],additionalProperties:false};
+  }
+  material(jd,data) {
+    return {currentDate:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}),job:{title:jd.title||"",company:jd.company||"",desc:jd.desc||"",tags:jd.tags||""},facts:data.facts.map(f=>({id:f.id,text:f.text,context:f.group})),links:data.links,requirementChecks:Evidence.requirementChecks(jd,data.normalized)};
+  }
+  buildMessages(input,ctx={}) {
+    const settings=input?.settings||ctx.settings||{},jd=input?.jd||{},data=input?.evidenceData||Evidence.catalog(store.resolveResume(settings));
+    return [{role:"system",content:this.buildSys(settings)},{role:"user",content:JSON.stringify({...this.material(jd,data),...(input?.greetingFeedback?{correction:input.greetingFeedback}:{})})}];
+  }
+  reviewMessages(jd,data,versions,settings) {
+    const selected=new Set(versions.flatMap(version=>version.evidenceIds));
+    return [{role:"system",content:this.renderPrompt("review.md")},{role:"user",content:JSON.stringify({...this.material(jd,{...data,facts:data.facts.filter(fact=>selected.has(fact.id))}),versions,writingStyle:WritingStyle.resolve(settings||{})})}];
+  }
+  async execute(input,ctx={}) {
+    const started=Date.now(),settings=input?.settings||ctx.settings||{},jd=input?.jd||{},resume=store.resolveResume(settings);
+    if(!resume.trim()) throw Error("请先选择一份有内容的简历，再生成三版招呼语");
+    const data=Evidence.catalog(resume);
+    if(!data.facts.length) throw Error("未识别到有效简历材料，请检查导入的文字是否完整");
+    let feedback="";
+    const usages=[];
+    for(let attempt=0;attempt<2;attempt++) {
+      if(attempt) ctx.onProgress?.("正在修正事实或表达问题…");
+      const written=await super.execute({jd,settings,evidenceData:data,greetingFeedback:feedback},{...ctx,settings});
+      usages.push(written.meta?.usage||{});
+      let draft;
+      try { draft=Evidence.parseDraft(written.text,data,jd); }
+      catch(error) {feedback=error.message;continue;}
+      ctx.onProgress?.("正在独立核对事实、岗位关联和表达…");
+      const reviewed=await ctx.llm.call({...Models.connection(settings),messages:this.reviewMessages(jd,data,draft.versions,settings),json:true,responseSchema:this.reviewSchema(data),temperature:0,reasoningEffort:"low",maxRetries:this.maxRetries,signal:ctx.signal});
+      usages.push(reviewed.usage||{});
+      try {
+        const verified=Evidence.validateReview(reviewed.text,draft.versions,data);
+        const usage=Object.fromEntries(["prompt_tokens","completion_tokens","total_tokens"].map(key=>[key,usages.reduce((sum,u)=>sum+(u[key]||0),0)]));
+        return {...written,text:Format.format(draft.versions),meta:{...written.meta,ms:Date.now()-started,usage,greetingStrategies:[...Format.names],evidence:verified.evidence,requirementChecks:draft.requirementChecks,reviewed:true}};
+      } catch(error) { feedback=error.message; }
     }
-
-    sys += "\n\n输出2个版本，每个版本以【版本1】【版本2】开头独占一行，两版之间空一行。两版必须从素材、开场句、侧重点、收尾句四个维度明显不同。全文不提问、不反问。";
-    return sys;
-  }
-
-  buildMessages(input, ctx) {
-    const jd = (input && input.jd) || input || {};
-    const s = (input && input.settings) || (ctx && ctx.settings) || {};
-    const resumeText = store.resolveResume(s);
-    const tech = isTechJd(jd);
-    const freshman = isFreshman(resumeText);
-    const execSupport = !tech && EXEC_SUPPORT_TERMS.some((t) => String(jd.title || "").includes(t) || String(jd.tags || "").includes(t));
-    const kw = extractJdKeywords(jd);
-    const needs = extractJdNeeds(jd, tech);
-    const ranked = rankResume(resumeText, kw.words, needs, tech);
-    const recent = recentGreetings(3);
-
-    const user =
-      "【岗位信息】\n职位：" + (jd.title || "未知") +
-      "\n公司：" + (jd.company || "未知") +
-      "\n薪资：" + (jd.salary || "未知") +
-      "\n标签：" + (jd.tags || "无") +
-      "\n职位描述：\n" + (jd.desc || "无") +
-      "\n\n【岗位类型判定】" + (tech ? "技术型岗位" : (execSupport ? "非技术型 · 执行支撑岗" : "非技术型岗位")) +
-      "\n\n【候选人身份】" + (freshman ? "应届毕业生" : "有经验候选人") +
-      "\n\n【JD 核心需求点 · 逐条提取】" + (needs.length ? "\n" + needs.map((n, i) => (i + 1) + ". " + n).join("\n") : "（无）") +
-      "\n\n【JD 关键词 · 词表命中】" + kw.top +
-      (ranked.high.length
-        ? "\n\n【简历 · 与岗位高度相关的片段】\n" + ranked.high.map((p, i) => "片段" + (i + 1) + "（需求点：" + (p.needHits.length ? p.needHits.join("、") : "—") + "；技能词：" + p.hits.join("、") + "）：" + p.text).join("\n\n") +
-          "\n\n【简历 · 其余片段（仅作背景了解）】\n" + (ranked.low.length ? ranked.low.join("\n---\n").slice(0, 2000) : "（无）")
-        : "\n\n【简历】\n" + (resumeText ? resumeText.slice(0, 2500) : "（未提供简历）")) +
-      "\n\n【最近已发出的招呼语（风格参考，结构不得雷同）】\n" + (recent.length ? recent.join("\n---\n") : "（无历史）") +
-      "\n\n（本次写作随机盐：" + Math.random().toString(36).slice(2, 8) + "——仅用于保证多次生成内容不重复）";
-
-    return [{ role: "system", content: this.buildSys(s, ranked.high.length > 0, recent, needs, tech, freshman, execSupport) }, { role: "user", content: user }];
-  }
-
-  async execute(input, ctx) {
-    const { jd, settings } = input;
-    const run = () => super.execute({ jd, settings }, ctx);
-
-    const res = await run();
-    const vs = extractVersionTexts(res.text);
-    if (vs.length >= 2 && vs[0] === vs[1]) {
-      const retry = await run();
-      const vs2 = extractVersionTexts(retry.text);
-      if (vs2.length < 2 || vs2[0] !== vs2[1]) return retry;
-    }
-    return res;
+    throw Error("招呼语未通过事实与表达复核，未生成可填入文案："+feedback);
   }
 }
-
-module.exports = { GreetingAgent, extractVersionTexts };
+module.exports={GreetingAgent,extractVersionTexts};

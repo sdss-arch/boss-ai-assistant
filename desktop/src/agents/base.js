@@ -1,4 +1,5 @@
 const logger = require("../core/logger");
+const Models = require("../core/model-config");
 
 /**
  * BaseAgent：所有专业智能体的基类。
@@ -62,10 +63,12 @@ class BaseAgent {
     }
     const settings = ctx.settings || {};
     const { text, usage } = await ctx.llm.call({
-      apiKey: settings.apiKey,
-      model: this.model || settings.model,
+      ...Models.connection(settings),
+      json: ["match", "company-parse", "greeting"].includes(this.id) || (this.id === "career" && input.task === "auto"),
       messages,
       temperature: this.temperature,
+      reasoningEffort: this.reasoningEffort,
+      responseSchema: this.responseSchema?.(input, ctx),
       maxRetries: this.maxRetries,
       signal: ctx.signal
     });
