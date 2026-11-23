@@ -18,9 +18,11 @@ function load() {
     try {
       const data = JSON.parse(fs.readFileSync(file, "utf8"));
       if (!data || Array.isArray(data) || typeof data !== "object") throw new Error("配置格式无效");
-      if (data.bossAiSettings?.encryptedApiKey) {
-        data.bossAiSettings.apiKey = safeStorage.decryptString(Buffer.from(data.bossAiSettings.encryptedApiKey, "base64"));
-        delete data.bossAiSettings.encryptedApiKey;
+      for (const profile of [data.bossAiSettings, ...Object.values(data.bossAiSettings?.modelProfiles || {})]) {
+        if (profile?.encryptedApiKey) {
+          profile.apiKey = safeStorage.decryptString(Buffer.from(profile.encryptedApiKey, "base64"));
+          delete profile.encryptedApiKey;
+        }
       }
       store = data;
       loaded = true;
@@ -36,10 +38,12 @@ function load() {
 }
 
 function protectKey(data) {
-  if (data.bossAiSettings?.apiKey) {
-    if (!safeStorage?.isEncryptionAvailable()) throw new Error("系统密钥保护不可用，无法安全保存 API Key");
-    data.bossAiSettings.encryptedApiKey = safeStorage.encryptString(data.bossAiSettings.apiKey).toString("base64");
-    delete data.bossAiSettings.apiKey;
+  for (const profile of [data.bossAiSettings, ...Object.values(data.bossAiSettings?.modelProfiles || {})]) {
+    if (profile?.apiKey) {
+      if (!safeStorage?.isEncryptionAvailable()) throw new Error("系统密钥保护不可用，无法安全保存 API Key");
+      profile.encryptedApiKey = safeStorage.encryptString(profile.apiKey).toString("base64");
+      delete profile.apiKey;
+    }
   }
   return data;
 }
