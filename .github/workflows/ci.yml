@@ -62,3 +62,11 @@ jobs:
       - name: Desktop smoke test (mock data, no real API)
         working-directory: desktop
         run: npm run test:desktop
+
+      - name: Online resume smoke test (mock data)
+        working-directory: desktop
+        run: npm run test:online-resume
+
+      - name: Greeting smoke test (mock data)
+        working-directory: desktop
+        run: npm run test:greeting
