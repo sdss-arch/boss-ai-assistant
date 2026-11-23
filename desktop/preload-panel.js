@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("panelApi", {
   // 存储
   getStore: (key) => ipcRenderer.invoke("store:get", key),
   setStore: (obj) => ipcRenderer.invoke("store:set", obj),
+  patchSettings: patch => ipcRenderer.invoke("settings:patch", patch),
   onPageContext: cb => ipcRenderer.on("boss:context", () => cb()),
   bossStatus: () => ipcRenderer.invoke("boss:status"),
   onBossStatus: cb => ipcRenderer.on("boss:status", (_e, info) => cb(info)),
@@ -30,7 +31,9 @@ contextBridge.exposeInMainWorld("panelApi", {
   agentCancel: () => ipcRenderer.invoke("agent:cancel"),
   agentCurrent: () => ipcRenderer.invoke("agent:current"),
   // 能力
-  testApi: () => ipcRenderer.invoke("api:test"),
+  testApi: draft => ipcRenderer.invoke("api:test", draft),
+  listModels: draft => ipcRenderer.invoke("model:list", draft),
+  modelHelp: provider => ipcRenderer.invoke("model:help", provider),
   saveReport: (name, content) => ipcRenderer.invoke("file:save-report", name, content),
   readLog: (lines) => ipcRenderer.invoke("log:read", lines),
   // 岗位匹配

@@ -13,6 +13,7 @@
   host.insertBefore(tools, el("webMock")); tools.append(el("webJobActions"), el("webFollowup"));
   let settings = {}, enabled = true, initialized = false, cache = {}, current = null, pending = null, inflight = null;
   let sequence = 0, timer, busyReading = false, readAgain = false, lastRequest = 0, failureKey = "", failureUntil = 0, lastJob = "";
+  let modelCooldownUntil = 0;
   let applied = null, replyEdited = false, replyContext = "";
   const recorded = new Set();
   const filled = new Set();
@@ -59,7 +60,7 @@
         if (applied && Career.identity(applied.job) !== Career.identity(job)) { replyEdited = false; el("autoReply").value = ""; }
       }
       if (!enabled) { status("自动辅助已暂停"); return; }
-      if (!settings.apiKey) { status("在设置中配置一次 API Key，之后自动分析"); return; }
+      if (!ModelConfig.ready(settings)) { status("请在设置中选择并测试模型服务，本地模型无需 API Key"); return; }
       if (cache[key] && Date.now() - cache[key].ts < 7 * 86400000) { await apply(current, cache[key].result, true); pending = null; return; }
       if (inflight?.key === key || (failureKey === key && Date.now() < failureUntil)) return;
       pending = current;
@@ -103,6 +104,7 @@
     timer = null;
     if (!enabled || !pending || inflight) return;
     if (current?.key !== pending.key) { pending = null; return; }
+    if (Date.now() < modelCooldownUntil) { status("模型服务限流，等待后自动继续，不会改用付费模型"); schedule(modelCooldownUntil - Date.now()); return; }
     const task = await api.agentCurrent();
     if (task.busy) { status("其他任务完成后自动继续"); schedule(1000); return; }
     const wait = Math.max(0, 15000 - (Date.now() - lastRequest));
@@ -113,7 +115,7 @@
       const content = "当前北京时间：" + new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) +
         "\n聊天记录（self=true 是我方，false 是对方）：\n" + JSON.stringify(snapshot.history);
       const response = await api.agentInvoke("career", { task: "auto", job: snapshot.job, content });
-      if (!response.ok) { const err = new Error(response.error); err.code = response.code; throw err; }
+      if (!response.ok) { const err = new Error(response.error); err.code = response.code; err.status = response.status; err.retryAfterMs = response.retryAfterMs; throw err; }
       const result = AutoAssist.parse(response.text, snapshot.history);
       cache[snapshot.key] = { ts: Date.now(), result };
       cache = Object.fromEntries(Object.entries(cache).sort((a, b) => b[1].ts - a[1].ts).slice(0, 40));
@@ -124,6 +126,7 @@
         if (current?.key === snapshot.key && enabled && err.code === "BACKGROUND_PREEMPTED") pending = current;
         else if (current?.key === snapshot.key) { failureKey = snapshot.key; failureUntil = Infinity; status("本次自动分析已停止，切换岗位后继续"); }
       } else {
+        if (err.status === 429) modelCooldownUntil = Date.now() + (err.retryAfterMs || 60000);
         failureKey = snapshot.key;
         failureUntil = /API Key|余额|认证|401|402/.test(err.message) ? Infinity : Date.now() + 60000;
         if (current?.key === snapshot.key) status("自动分析未完成：" + err.message);
@@ -159,7 +162,7 @@
     if (key === "bossAiSettings") { const data = await api.getStore(key); settings = data[key] || {}; failureKey = ""; observe(); }
   });
   document.querySelector('[data-tab="company"]').addEventListener("click", async () => {
-    if (!enabled || !settings.apiKey || !current?.job.company || coBusy || el("coName").value !== current.job.company) return;
+    if (!enabled || !ModelConfig.ready(settings) || !current?.job.company || coBusy || el("coName").value !== current.job.company) return;
     const data = await api.getStore("bossAiCompanyReports");
     const cached = data.bossAiCompanyReports?.[current.job.company]?.[0];
     if (cached && Date.now() - cached.ts < 86400000) {

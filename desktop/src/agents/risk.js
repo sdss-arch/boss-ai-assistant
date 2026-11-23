@@ -2,6 +2,7 @@
  * RiskAgent v2（重构版）：
  * 使用 AgentBase + prompt 模板
  */
+const Models = require("../core/model-config");
 const { AgentBase } = require("./agent-base");
 const logger = require("../core/logger");
 const { multiSearch } = require("../core/tools");
@@ -62,8 +63,7 @@ class RiskAgent extends AgentBase {
       "\n【公开检索证据】\n" + evidence;
 
     const { text, usage } = await ctx.llm.call({
-      apiKey: ctx.settings.apiKey,
-      model: ctx.settings.model,
+      ...Models.connection(ctx.settings),
       messages: [{ role: "system", content: sys }, { role: "user", content: user }],
       temperature: 0.3,
       signal: sig

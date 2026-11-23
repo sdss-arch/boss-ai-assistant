@@ -26,7 +26,7 @@
     const resumes = settings.resumes || [];
     const resume = resumes.find(r => r.id === settings.activeResumeId) || resumes[0];
     return JSON.stringify({ title: job.title, company: job.company, href: job.href, desc: job.desc, salary: job.salary,
-      resume: resume?.text || settings.resumeText || "", model: settings.model || "deepseek-chat", style: settings.style || "prof", styleVersion: settings.writingStyleVersion || 0, custom: settings.customPrompt || "", history });
+      resume: resume?.text || settings.resumeText || "", provider: settings.provider || "deepseek", baseUrl: settings.baseUrl || "", freeOnly: settings.freeOnly ?? false, contextSize: settings.contextSize, maxOutputTokens: settings.maxOutputTokens, model: settings.model || "deepseek-chat", style: settings.style || "prof", styleVersion: settings.writingStyleVersion || 0, custom: settings.customPrompt || "", history });
   }
   return { parse, signature };
 });

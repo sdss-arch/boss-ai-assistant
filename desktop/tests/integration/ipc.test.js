@@ -22,6 +22,7 @@ test("网页只获得配置状态，密钥与简历正文不会返回", async ()
   expect(JSON.stringify(result)).not.toContain("test-secret"); expect(JSON.stringify(result)).not.toContain("private resume");
   await expect(handlers.get("store:get")(bossEvent, "bossAiCareerJobs")).rejects.toThrow();
   await expect(handlers.get("store:set")(bossEvent, { bossAiSettings: {} })).rejects.toThrow();
+  for (const channel of ["settings:patch", "model:list", "model:help", "api:test"]) await expect(handlers.get(channel)(bossEvent, {})).rejects.toThrow("无权调用");
 });
 test("非受信来源、子 frame 与网页调用面板能力均被拒绝", async () => {
   const subframe = { ...bossEvent, senderFrame: { url: bossEvent.senderFrame.url } };

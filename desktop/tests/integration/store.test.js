@@ -24,6 +24,15 @@ test("旧明文密钥迁移后，主文件与备份都不含明文", () => {
   expect(JSON.parse(fs.readFileSync(file + ".bak")).bossAiSettings.apiKey).toBeUndefined();
   store.load(); expect(store.getSettings().apiKey).toBe("test-secret-key");
 });
+test("多个服务的密钥分别加密，重启后保持独立", () => {
+  store.set({ bossAiSettings: { provider: "ollama", apiKey: "", modelProfiles: { deepseek: { apiKey: "deep-secret" }, gemini: { apiKey: "gemini-secret" } } } });
+  store.flush();
+  const disk = JSON.parse(fs.readFileSync(path.join(mockDataDir, "settings.json")));
+  expect(disk.bossAiSettings.modelProfiles.deepseek.apiKey).toBeUndefined();
+  expect(disk.bossAiSettings.modelProfiles.gemini.encryptedApiKey).toBeTruthy();
+  store.load(); expect(store.getSettings().modelProfiles.deepseek.apiKey).toBe("deep-secret");
+  expect(store.getSettings().modelProfiles.gemini.apiKey).toBe("gemini-secret");
+});
 test("主文件损坏时恢复备份；两个文件均损坏时拒绝静默清空", () => {
   store.set({ example: "old" }); store.flush(); store.set({ example: "new" }); store.flush();
   const file = path.join(mockDataDir, "settings.json"); fs.writeFileSync(file, "broken");

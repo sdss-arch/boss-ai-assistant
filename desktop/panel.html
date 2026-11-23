@@ -100,7 +100,7 @@
         <button class="action-card" id="btnGreeting">
           <svg class="ic"><use href="#i-spark"/></svg>
           <span class="ac-title">招呼语</span>
-          <span class="ac-sub">两版真实文案</span>
+          <span class="ac-sub">痛点 / 极简 / 业务三版</span>
         </button>
         <button class="action-card" id="btnReply">
           <svg class="ic"><use href="#i-chat"/></svg>
@@ -346,17 +346,23 @@
     <section id="tab-settings" class="page">
       <div class="card">
         <div class="card-head"><h2>模型</h2></div>
-        <div class="field"><label>DeepSeek API Key</label><input type="password" id="apiKey" placeholder="sk-xxxxxxxx" autocomplete="off"></div>
-        <div class="field"><label>模型</label>
-          <select id="model">
-            <option value="deepseek-chat">deepseek-chat · 快速均衡</option>
-            <option value="deepseek-reasoner">deepseek-reasoner · 深度推理</option>
-          </select>
-        </div>
+        <div class="field"><label for="provider">模型服务</label><select id="provider"></select></div>
+        <p class="desc" id="modelProviderHint"></p>
+        <details id="modelLocalGuide" hidden><summary>本地模型首次准备（只需一次）</summary><p class="desc">点击「服务配置说明」安装 Ollama，在终端运行 <code>ollama pull qwen3:4b</code> 下载模型（约 2.5 GB）。保持 Ollama 运行，然后点击「读取模型列表」和「测试连接」。模型保存在本机，以后启动服务即可使用；无需重复上传简历。内存较小时可改用更小的模型。</p></details>
+        <div class="field"><label for="modelBaseUrl">API 地址</label><input id="modelBaseUrl" type="url" autocomplete="off"></div>
+        <div class="field"><label for="apiKey">当前服务 API Key（本地可留空）</label><input type="password" id="apiKey" placeholder="仅填写当前服务的 Key" autocomplete="off"></div>
+        <div class="field"><label for="model">模型 ID</label><input type="text" id="model" list="modelSuggestions" placeholder="读取模型列表后选择，或填写完整模型 ID"><datalist id="modelSuggestions"></datalist></div>
+        <div class="field" id="modelDiscoveredField" hidden><label for="modelDiscovered">服务返回的可用模型</label><select id="modelDiscovered"></select></div>
+        <label><input type="checkbox" id="modelFreeOnly"> 仅免费模式：不调用无法确认零计费的云端模型</label>
+        <p class="desc career-gap">本地模型不收 API 调用费，但需要下载模型并占用本机算力。云端额度、限流和价格由服务商决定；应用不会自动改用付费模型。</p>
+        <details><summary>高级设置</summary><div class="field-row career-gap"><div class="field"><label for="modelTimeout">超时（秒）</label><input id="modelTimeout" type="number" min="5" max="600"></div><div class="field"><label for="modelContext">Ollama 上下文长度</label><input id="modelContext" type="number" min="2048" max="131072" step="1024"></div></div><div class="field"><label for="modelOutput">最大输出 token</label><input id="modelOutput" type="number" min="256" max="32768" step="256"></div></details>
         <div class="btn-row">
+          <button class="btn secondary" id="btnReadModels">读取模型列表</button>
           <button class="btn secondary" id="btnTestApi">测试连接</button>
-          <span class="status" id="apiTestStatus" style="flex:1;"></span>
         </div>
+        <div class="btn-row"><button class="link-btn" id="btnUseLocalModel">切换到免费本地模型</button><button class="link-btn" id="btnModelHelp">服务配置说明</button></div>
+        <div class="status" id="apiTestStatus" role="status"></div>
+        <div class="status" id="modelSaveStatus" role="status">每个服务分别保存配置和密钥。</div>
       </div>
       <div class="card">
         <div class="card-head"><h2>写作风格</h2></div>
@@ -393,6 +399,13 @@
       <div class="card">
         <div class="card-head"><h2>提醒与界面</h2></div>
         <div class="switch-row">
+          <span>网页 AI 悬浮按钮</span>
+          <label class="switch"><input type="checkbox" id="floatingWidget" aria-label="显示网页 AI 悬浮按钮"><span class="slider"></span></label>
+        </div>
+        <p class="desc">按住 AI 按钮拖动，点击 × 关闭。自动记住位置和关闭状态，不影响右侧助手。</p>
+        <button class="btn secondary" id="btnResetWidget">显示并恢复悬浮按钮默认位置</button>
+        <div class="status" id="widgetStatus" role="status"></div>
+        <div class="switch-row">
           <span>对方新消息提醒</span>
           <label class="switch"><input type="checkbox" id="autoReply"><span class="slider"></span></label>
         </div>
@@ -423,12 +436,16 @@
     </section>
   </main>
 
+  <script src="src/core/model-config.js"></script>
+  <script src="src/core/greeting-format.js"></script>
+  <script src="model-settings.js"></script>
   <script src="src/core/writing-style.js"></script>
   <script src="src/core/career.js"></script>
 <script src="src/core/automation.js"></script>
 <script src="panel.js"></script>
 <script src="workbench.js"></script>
 <script src="webpage-assistant.js"></script>
+<script src="online-resume.js"></script>
 <script src="auto-assist.js"></script>
 </body>
 </html>

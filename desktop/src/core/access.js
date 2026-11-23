@@ -1,7 +1,7 @@
 const path = require("path");
 const { pathToFileURL } = require("url");
 
-const PAGE_KEYS = new Set(["bossAiHistory", "bossAiPendingGreeting", "bossAiAutoFill"]);
+const PAGE_KEYS = new Set(["bossAiHistory", "bossAiPendingGreeting", "bossAiAutoFill", "bossAiWidget"]);
 function isSite(url, domain) {
   try { const u = new URL(url); return u.protocol === "https:" && (u.hostname === domain || u.hostname.endsWith("." + domain)); }
   catch { return false; }
@@ -16,7 +16,7 @@ function isBoss(event, view) {
   return event.sender === wc && event.senderFrame === wc.mainFrame && isSite(event.senderFrame.url, "zhipin.com");
 }
 function pageSettings(s, resolveResume) {
-  return { hasApiKey: !!s.apiKey, hasResume: !!resolveResume(s).trim(), autoReply: s.autoReply !== false,
+  return { hasApiKey: !!s.apiKey, modelReady: require("./model-config").ready(s), hasResume: !!resolveResume(s).trim(), autoReply: s.autoReply !== false,
     cooldown: s.cooldown || 10, maxContext: s.maxContext || 8, notifySound: !!s.notifySound, msgSelector: s.msgSelector || "" };
 }
 function jobUrl(href) {

@@ -2,6 +2,7 @@
  * CompanyAgent v3（重构版）：
  * 使用 AgentBase + prompt 模板 + web-intelligence skill
  */
+const Models = require("../core/model-config");
 const { AgentBase } = require("./agent-base");
 const logger = require("../core/logger");
 const { multiSearch, extractFields, fetchBaike } = require("../core/tools");
@@ -98,8 +99,7 @@ class CompanyAgent extends AgentBase {
       "【多渠道检索证据】\n" + sections.join("\n\n").slice(0, 16000);
 
     const { text, usage } = await ctx.llm.call({
-      apiKey: ctx.settings.apiKey,
-      model: ctx.settings.model,
+      ...Models.connection(ctx.settings),
       messages: [{ role: "system", content: sys }, { role: "user", content: user }],
       temperature: 0.4,
       signal: sig

@@ -19,6 +19,8 @@ async function run(profile, phase) {
     if (data.bossAiSettings.apiKey || !data.bossAiSettings.encryptedApiKey) throw new Error("密钥未加密");
     if (data.bossAiCareerJobs.length !== 1 || data.bossAiInterviews.length !== 2) throw new Error("资料未保存");
     await run(profile, "restore");
-    console.log("PASS: 真实 Electron 工作台、收藏/进度、简历诊断、模拟面试、Offer、关联面试、筛选保存、加密及重启恢复");
+    await run(profile, "online-resume");
+    await run(profile, "greeting");
+    console.log("PASS: 真实 Electron 悬浮按钮拖动/关闭/恢复、工作台、收藏/进度、简历诊断、模拟面试、Offer、关联面试、筛选保存、加密及重启恢复");
   } finally { await fs.rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
 })().catch(err => { console.error(err); process.exitCode = 1; });

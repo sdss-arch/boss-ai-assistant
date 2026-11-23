@@ -103,6 +103,8 @@ if (!window.chrome.storage) {
   const wrapped =
     shim +
     "\n;(function(){\ntry {\n" +
+    fs.readFileSync(path.join(__dirname, "src", "core", "greeting-format.js"), "utf8") + "\n" +
+    fs.readFileSync(path.join(__dirname, "content", "online-resume.js"), "utf8") + "\n" +
     contentSrc +
     "\n} catch (err) { return 'CONTENT_SCRIPT_ERROR: ' + ((err && err.stack) || err); }\n})();";
   webContents.executeJavaScript(wrapped, true).then((ret) => {

@@ -12,7 +12,6 @@ class MatchAgent extends AgentBase {
       role: "岗位智能匹配",
       description: "基于简历与岗位列表深度匹配打分，识别值得投递的岗位",
       temperature: 0.3,
-      model: "deepseek-chat",
       learningAdapter
     });
   }

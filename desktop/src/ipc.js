@@ -4,6 +4,7 @@ const path = require("path");
 const logger = require("./core/logger");
 const store = require("./core/store");
 const llm = require("./core/llm");
+const Models = require("./core/model-config");
 const orchestrator = require("./orchestrator");
 const { list: listAgents } = require("./registry");
 const imageBank = require("./core/image-bank");
@@ -45,6 +46,14 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   }
 
   // ---------- 存储 ----------
+  handle("settings:patch", (_e, patch) => {
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("设置格式无效");
+    const previous = store.getSettings();
+    const next = { ...previous, ...patch };
+    if (patch.modelProfiles) next.modelProfiles = { ...(previous.modelProfiles || {}), ...patch.modelProfiles };
+    store.set({ bossAiSettings: next }); store.flush(); broadcast("bossAiSettings");
+    return { ok: true };
+  });
   handle("store:get", (e, key) => {
     if (!isPanel(e, panelView)) {
       if (key === "bossAiSettings") return { [key]: pageSettings(store.getSettings(), store.resolveResume) };
@@ -165,7 +174,7 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
       });
       return { ok: true, ...res };
     } catch (err) {
-      return { ok: false, error: String((err && err.message) || err), code: err.code };
+      return { ok: false, error: String((err && err.message) || err), code: err.code, status: err.status, retryAfterMs: err.retryAfterMs };
     }
   });
   handle("agent:log", () => ({ ok: true, log: orchestrator.getLog() }));
@@ -196,18 +205,25 @@ function registerIpc({ win, bossView, panelView, matchView, layoutViews, setColl
   }));
 
   // ---------- API 测试连接 ----------
-  handle("api:test", async () => {
-    const s = store.getSettings();
-    if (!s.apiKey) return { ok: false, error: "未配置 API Key，请先填写" };
+  handle("model:list", async (_e, draft) => {
+    try { return { ok: true, models: await llm.listModels(draft || store.getSettings()) }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+  handle("model:help", (_e, provider) => {
+    const url = Models.providers[provider]?.help;
+    if (url) require("electron").shell.openExternal(url);
+    return { ok: !!url };
+  });
+  handle("api:test", async (_e, draft) => {
+    const s = draft || store.getSettings();
     try {
       const r = await llm.call({
-        apiKey: s.apiKey,
-        model: s.model,
+        ...Models.connection(s),
         messages: [{ role: "user", content: "请只回复四个字：连接正常" }],
         temperature: 0,
         maxRetries: 0
       });
-      return { ok: true, model: s.model || llm.DEFAULT_MODEL, text: String(r.text || "").slice(0, 60) };
+      return { ok: true, provider: Models.resolve(s).provider, model: Models.resolve(s).model, text: String(r.text || "").slice(0, 60) };
     } catch (err) {
       return { ok: false, error: String((err && err.message) || err) };
     }

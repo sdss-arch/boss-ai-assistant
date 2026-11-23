@@ -44,11 +44,9 @@ function saveWritingStyleSoon() {
   writingStyleTimer = setTimeout(() => {
     writingStyleQueue = writingStyleQueue.catch(() => {}).then(async () => {
       if (revision !== writingStyleRevision) return;
-      const data = await api.getStore("bossAiSettings");
-      if (revision !== writingStyleRevision) return;
       writingStyleSaving++;
       try {
-        await api.setStore({ bossAiSettings: { ...(data.bossAiSettings || {}), ...fields } });
+        await api.patchSettings(fields);
         settings = { ...(settings || {}), ...fields };
         if (revision === writingStyleRevision) message.textContent = "已自动保存，后续文案立即生效。";
       } catch (err) { message.textContent = "保存失败：" + err.message; }
@@ -165,8 +163,7 @@ async function loadSettings() {
   const norm = normalizeResumes(settings);
   resumes = norm.list;
   activeResumeId = norm.active;
-  $("#apiKey").value = settings.apiKey || "";
-  $("#model").value = settings.model || "deepseek-chat";
+  ModelSettings.load(settings);
   $("#style").value = WritingStyle.resolve(settings).id;
   $("#customPrompt").value = settings.customPrompt || "";
   renderWritingStyle();
@@ -177,7 +174,27 @@ async function loadSettings() {
   $("#maxContext").value = settings.maxContext || 8;
   applyTheme();
   refreshStatus();
+  loadWidgetSettings();
 }
+
+async function loadWidgetSettings() {
+  const data = await api.getStore("bossAiWidget");
+  $("#floatingWidget").checked = data.bossAiWidget?.hidden !== true;
+}
+$("#floatingWidget").onchange = async () => {
+  const hidden = !$("#floatingWidget").checked;
+  try {
+    const data = await api.getStore("bossAiWidget");
+    await api.setStore({ bossAiWidget: { ...(data.bossAiWidget || {}), hidden } });
+    $("#widgetStatus").textContent = hidden ? "悬浮按钮已关闭，右侧助手可继续使用。" : "悬浮按钮已显示。";
+  } catch (error) { $("#widgetStatus").textContent = "保存失败：" + error.message; await loadWidgetSettings(); }
+};
+$("#btnResetWidget").onclick = async () => {
+  try {
+    await api.setStore({ bossAiWidget: { hidden: false } });
+    $("#widgetStatus").textContent = "已显示悬浮按钮并恢复默认位置。";
+  } catch (error) { $("#widgetStatus").textContent = "保存失败：" + error.message; }
+};
 
 async function saveSettings() {
   if ($("#style").value === "custom" && !$("#customPrompt").value.trim()) {
@@ -191,8 +208,7 @@ async function saveSettings() {
   const cur = currentResume();
   const obj = {
     ...settings,
-    apiKey: $("#apiKey").value.trim(),
-    model: $("#model").value,
+    ...ModelSettings.snapshot(),
     style: $("#style").value,
     customPrompt: $("#customPrompt").value.trim(),
     writingStyleVersion: 1,
@@ -221,7 +237,7 @@ async function refreshStatus() {
   const parts = [];
   const cur = currentResume();
   parts.push(cur && String(cur.text || "").trim() ? '<span class="st ok">简历</span>' : '<span class="st no">简历</span>');
-  parts.push(s.apiKey ? '<span class="st ok">API</span>' : '<span class="st no">API</span>');
+  parts.push(ModelConfig.ready(s) ? '<span class="st ok">模型</span>' : '<span class="st no">模型</span>');
   parts.push(info.onDetail ? '<span class="st ok">JD</span>' : '<span class="st">JD</span>');
   parts.push(s.autoReply !== false ? '<span class="st ok">提醒</span>' : '<span class="st no">提醒</span>');
   $("#statusbar").innerHTML = parts.join("");
@@ -293,6 +309,8 @@ function esc(s) {
 function splitVersions(text) {
   const t = (text || "").trim();
   if (!t) return [];
+  const structured = GreetingFormat.parse(t);
+  if (structured.length) return structured.map(version => version.text).filter(Boolean);
   const marker = /^\s*(?:【\s*(?:版本\s*)?[0-9一二三四五六七八九十]+\s*】|版本\s*[0-9一二三四五六七八九十]+\s*[：:、.．]?|第\s*[0-9一二三四五六七八九十]+\s*(?:个版本|版)\s*[：:、.．]?|[0-9一二三四五六七八九十]+\s*[、.．:：])\s*/;
   const versions = [];
   let cur = "";
@@ -325,7 +343,7 @@ async function saveHistory(entry) {
 async function runAction(kind) {
   if (busy) return;
   await loadSettings();
-  if (!settings.apiKey) { setStatus("未配置 API Key，请在设置页填写", true); showTab("settings"); return; }
+  if (!ModelConfig.ready(settings)) { setStatus("请先在设置中配置模型服务；本地模型无需 API Key", true); showTab("settings"); return; }
   const curResume = currentResume();
   if (kind === "greeting" && !(curResume && String(curResume.text || "").trim())) {
     setStatus("未配置简历，生成效果会变差（可在设置页粘贴简历）", true);
@@ -344,16 +362,17 @@ async function runAction(kind) {
       if (!res.ok) throw new Error(res.error || "生成失败");
       const versions = splitVersions(res.text);
       if (versions.length) {
-        await saveHistory({ kind: "greeting", title: jdR.jd.title, company: jdR.jd.company, result: res.text });
+        await saveHistory({ kind: "greeting", title: jdR.jd.title, company: jdR.jd.company, result: res.text, evidence: res.meta?.evidence });
         await api.setStore({
           bossAiPendingGreeting: {
             versions,
+            evidence: res.meta?.evidence,
             job: { title: jdR.jd.title, company: jdR.jd.company, salary: jdR.jd.salary },
             ts: Date.now()
           }
         });
       }
-      renderGreeting({ jd: jdR.jd, versions });
+      renderGreeting({ jd: jdR.jd, versions, evidence: res.meta?.evidence });
       renderPending();
     } else {
       const ctxR = await api.bossAction({ type: "get-chat-history" });
@@ -382,7 +401,7 @@ function renderGreeting(res) {
   const c = $("#content");
   c.innerHTML = "";
   c.appendChild(jdBox(res.jd));
-  (res.versions || []).forEach((v, i) => c.appendChild(versionCard("招呼语 " + (i + 1), v, "greeting")));
+  (res.versions || []).forEach((v, i) => c.appendChild(versionCard(GreetingFormat.title(i, res.versions.length), v, "greeting", res.evidence?.[i])));
 }
 
 function renderReply(res) {
@@ -405,11 +424,21 @@ function jdBox(jd) {
   return el;
 }
 
-function versionCard(tag, text, kind) {
+function versionCard(tag, text, kind, evidence) {
   const card = document.createElement("div");
   card.className = "ver";
   card.innerHTML = '<span class="tag">' + esc(tag) + '</span><div class="txt"></div><div class="ops"></div>';
   card.querySelector(".txt").textContent = text;
+  if (evidence?.source) {
+    const details = document.createElement("details");
+    details.className = "greeting-source";
+    const summary = document.createElement("summary");
+    summary.textContent = "查看简历依据";
+    const source = document.createElement("div");
+    source.textContent = (evidence.context && evidence.context !== "resume" ? evidence.context + "\n" : "") + evidence.source;
+    details.append(summary, source);
+    card.querySelector(".txt").after(details);
+  }
   const ops = card.querySelector(".ops");
 
   const fill = mkBtn("填入输入框", async () => {
@@ -452,7 +481,13 @@ async function renderPending() {
   const job = data.job || {};
   box.innerHTML = '<div class="pending-title">待发送 · ' + esc(job.title || "职位") +
     (job.salary ? " " + esc(job.salary) : "") + (job.company ? " · " + esc(job.company) : "") + "</div>";
-  data.versions.forEach((v, i) => box.appendChild(versionCard("招呼语 " + (i + 1), v, "greeting")));
+  if (data.notice) {
+    const notice=document.createElement("div");
+    notice.className="pending-note";
+    notice.textContent=data.notice;
+    box.appendChild(notice);
+  }
+  data.versions.forEach((v, i) => box.appendChild(versionCard(GreetingFormat.title(i, data.versions.length), v, "greeting", data.evidence?.[i])));
   const discard = document.createElement("button");
   discard.className = "btn ghost sm";
   discard.style.width = "100%";
@@ -1616,18 +1651,7 @@ $("#btnReply").onclick = () => runAction("reply");
 $("#btnLetter").onclick = showLetterForm;
 $("#btnCleanUnread").onclick = cleanUnreadFlow;
 $("#btnSave").onclick = saveSettings;
-$("#btnTestApi").onclick = async () => {
-  const el = $("#apiTestStatus");
-  el.textContent = "测试中…";
-  el.className = "status busy";
-  const key = $("#apiKey").value.trim();
-  if (!key) { el.textContent = "请先填写 API Key"; el.className = "status err"; return; }
-  const d = await api.getStore("bossAiSettings");
-  await api.setStore({ bossAiSettings: { ...(d.bossAiSettings || {}), apiKey: key } });
-  const r = await api.testApi();
-  if (r.ok) { el.textContent = "连接正常（" + (r.model || "") + "）：" + (r.text || ""); el.className = "status"; }
-  else { el.textContent = r.error || "连接失败"; el.className = "status err"; }
-};
+$("#btnTestApi").onclick = () => ModelSettings.test();
 
 async function renderUsageStats() {
   const r = await api.agentStats();
@@ -1824,8 +1848,9 @@ $("#chatClear").onclick = async () => {
 };
 
 api.onStoreChanged((key) => {
+  if (key === "bossAiWidget") loadWidgetSettings();
   if (key === "bossAiSettings") {
-    if (writingStyleSaving) api.getStore(key).then(data => { settings = data[key] || {}; });
+    if (writingStyleSaving || ModelSettings.saving) api.getStore(key).then(data => { settings = data[key] || {}; });
     else loadSettings();
   }
   if (key === "bossAiPendingGreeting") { renderPending(); }
