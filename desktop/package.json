@@ -8,12 +8,15 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win portable",
+    "build:local": "electron-builder --win --dir --config electron-builder.local.cjs && node ../scripts/verify-local-build.cjs",
     "check": "node ../scripts/check-syntax.cjs",
     "test": "jest",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
     "test:desktop": "node tests/desktop.smoke.cjs",
-    "verify": "npm run check && npm test -- --runInBand && npm run test:desktop",
+    "test:online-resume": "node tests/online-resume.smoke.cjs",
+    "test:greeting": "node tests/online-resume.smoke.cjs greeting",
+    "verify": "npm run check && npm test -- --runInBand && npm run test:desktop && npm run test:online-resume && npm run test:greeting",
     "capture:screenshots": "node ../scripts/capture-screenshots.cjs"
   },
   "build": {
@@ -27,12 +30,15 @@
       "panel.css",
       "panel.js",
       "content/content.js",
+      "content/online-resume.js",
       "src/**/*",
       "prompts/**/*",
       "workbench.js",
       "workbench.css",
       "webpage-assistant.js",
-      "auto-assist.js"
+      "auto-assist.js",
+      "model-settings.js",
+      "online-resume.js"
     ],
     "win": {
       "target": [
