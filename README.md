@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/sdss-arch/boss-ai-assistant/actions/workflows/ci.yml"><img src="https://github.com/sdss-arch/boss-ai-assistant/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/sdss-arch/boss-ai-assistant/releases"><img src="https://img.shields.io/github/v/release/sdss-arch/boss-ai-assistant?display_name=tag" alt="Release" /></a>
-  <img src="https://img.shields.io/badge/tests-148%20passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-178%20passed-brightgreen" alt="Tests" />
   <a href="https://github.com/sdss-arch/boss-ai-assistant/releases"><img src="https://img.shields.io/github/downloads/sdss-arch/boss-ai-assistant/total" alt="Downloads" /></a>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2B-0078d6" alt="Platform" />
   <img src="https://img.shields.io/badge/Electron-43.x-47848f" alt="Electron" />
@@ -64,7 +64,7 @@ BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌
 
 | 智能体 | 职责 | 核心技术 |
 |---|---|---|
-| 招呼语专家 | 基于 JD 与简历生成真人感打招呼语 | JD↔简历相关性工程化排序 + few-shot 语感锚定 + 历史反雷同 |
+| 招呼语专家 | 基于 JD 与简历生成真人感打招呼语 | 按JD自然写作 + 独立事实与表达复核 + 原文依据 |
 | 回复助手 | 贴合聊天语境自然应答 | 对话上下文采集 + 人话示例 + AI 痕迹禁用清单 |
 | 面试教练 | 生成结构化面试准备卡 | 联网检索公司情报（多引擎）+ 简历深挖 |
 | 岗位匹配师 | 职位库深度匹配打分 | 简历关键词驱动全库检索 + 三问思考式打分 + 补充要求覆盖 |
@@ -78,13 +78,14 @@ BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌
 ### 🌐 网页助手（无需建档）
 
 - 自动读取当前 BOSS 页面中的岗位详情或聊天上下文。
+- 网页 AI 悬浮按钮可按住拖动，点击旁边的 × 关闭，位置和关闭状态自动保存；「设置 → 提醒与界面」可重新显示或恢复默认位置。
 - 直接对当前网页执行简历诊断、优化、模拟面试和沟通草稿生成。
 - 一键收藏当前职位或匹配结果，按「感兴趣 / 已沟通 / 已投简历 / 面试中 / Offer / 已结束」跟进。
 - 收藏记录保存 JD、简历快照、沟通摘要、生成文案、面试准备卡和公司报告，页面下架后仍可查看。
 
 ### ⚡ 自动辅助
 
-- 配置一次 API Key 与简历后默认开启；自动生成岗位分析、沟通摘要、回复草稿和面试要点。
+- 配置一次模型与简历后默认开启（本地模型无需 API Key）；自动生成岗位分析、沟通摘要、回复草稿和面试要点。
 - 页面或消息变化时自动更新；相同内容复用缓存，短时变化合并处理。
 - 新消息草稿自动填入空闲聊天框；正在输入或已有人工草稿时保留原内容。
 - **不会**自动点击发送、提交简历或确认面试；明确日期与原文依据的面试安排才建立待确认记录。
@@ -96,12 +97,15 @@ BOSS直聘 AI 助手是一个面向求职场景的桌面应用：在系统内嵌
 - **补充要求覆盖**：临时指定城市、薪资底线、排除关键词、外包及双休条件（内置 100+ 城市代码）。
 - **定时刷新**：15/30/60 分钟自动重检，新出现的高分岗位面板横幅提醒；一键跳转岗位详情。
 
-### 📝 像人一样写作（非模板生成）
+### 📝 招呼语与真实经历
 
-- 简历按 JD 关键词切分为「高相关片段 / 其余片段」，只允许从高相关片段选材。
-- few-shot 语感示例 + 35 个 AI 痕迹禁用词（贵司 / 赋能 / 首先 / 综上…）。
-- 历史防雷同 + 随机盐破解服务端缓存；风格设置（专业稳重 / 热情亲和 / 简洁高效 / 自定义）统一作用于写作功能。
-- 诚实降级：简历与岗位无交集时坦白说明，禁止编造「会一点 / 自学过」等中间状态。
+- 根据当前 JD 与所选简历自然撰写直击痛点 / 极简高冷 / 业务共情三版，保留三种内置写作偏好与自定义表达。
+- 每版最多400字，不设最低字数；极简版最短，但保留有用的产品背景和实际工作，不追求字数越少越好。
+- 允许归纳、改写和组织多条相关事实，不再用固定开场收尾拼接一条简历原句。每版记录实际引用的简历编号。
+- 程序校验长度、完整性、未知证书状态、编造备考、参与程度升级、量化事实和链接来源；关键门槛资料未确认时不写成自身缺点。
+- 写作后另发起一次独立复核，逐项核对个人事实、经历与岗位的实际关系、语句是否自然及三版策略差异；不合格最多重写并复核一次，仍不通过则报错，不展示未经复核的草稿。
+- 独立复核仍依赖所选模型的判断，不保证完全消除模型错误；卡片可展开「查看简历依据」自行核对，回填只包含正文。
+- 历史生成文案不作为事实输入；作品链接不强塞，无关经历不用于补齐三版，不能用一般工作经验冒充资格替代品。
 
 ### 🏢 公司尽调与工作台
 
@@ -160,7 +164,7 @@ flowchart LR
 | 界面 | 原生 HTML / CSS / JS（Design Tokens 主题系统） |
 | 视图 | WebContentsView 多视图（BOSS / 面板 / 后台检索） |
 | 编排 | 自研 Supervisor（EventEmitter + 注册表） |
-| LLM | DeepSeek API（chat / reasoner 双模型） |
+| LLM | Ollama 原生、Gemini 原生、OpenAI 兼容接口；支持本地开源模型与多家云服务 |
 | 采集 | 百度 / 搜狗 / Bing 多引擎 + 容错解析 |
 | 测试 | Jest（单元 + 集成）+ 真实 Electron 冒烟测试 |
 | 打包 | electron-builder（Windows portable 单文件 exe） |
@@ -189,6 +193,8 @@ npm start -- --remote-debugging-port=9333   # 带调试端口
 npm run check             # 全量 JS 语法检查
 npm test                  # 单元测试 + 集成测试
 npm run test:desktop      # 真实 Electron 冒烟测试
+npm run test:online-resume # 在线简历专项冒烟测试
+npm run test:greeting     # 招呼语专项冒烟测试
 npm run verify            # 一次性执行以上全部验证
 npm run capture:screenshots  # 重新生成截图（mock 数据）
 npm run build             # 打包 → dist/BOSSAI.exe
@@ -196,10 +202,43 @@ npm run build             # 打包 → dist/BOSSAI.exe
 
 ### 首次配置
 
-1. **设置页**：填入 DeepSeek API Key（platform.deepseek.com 获取）。
+1. **设置页**：选择模型服务，读取模型列表并测试连接。本地 Ollama / LM Studio 无需云端 Key；原有 DeepSeek 配置继续兼容。
 2. **设置页**：粘贴简历文本，或导入 PDF / DOCX / TXT / Markdown。
 3. 打开 BOSS 直聘页面，扫码登录（登录态本地保存）。
 4. 各智能体即可使用；自动辅助默认开启，可在首页暂停。
+
+### 本机双击启动（独立目录版）
+
+执行 `npm run build:local` 生成完整独立目录，入口为 `desktop/dist/standalone/win-unpacked/BOSSAI.exe`。该目录包含运行时、应用和生产依赖，之后直接双击入口或桌面快捷方式即可，运行时无需 Node.js、npm 或源项目。移动应用时需要移动整个目录，不能只复制一个 EXE。
+
+本机 Windows 的 `VerifiedAndReputableDesktop` 策略曾拦截未签名的新单文件便携包。独立目录版保留原始 Electron 运行时二进制、不使用自解压启动器，已在本机实际启动验证；不更改 Windows 应用控制或杀毒设置。这不等于获得可信签名，也不保证其他电脑的策略会放行。公开分发单文件版本仍应使用可信代码签名，参见 [Microsoft 的开发者说明](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview)。
+
+### 直接优化 BOSS 在线简历
+
+在助手首页点击「在线简历 → 打开 BOSS 在线简历」，页面加载后自动读取个人优势、工作/项目经历、专业技能等正文段落。选择段落 → 优化这一段 → 对照网页原文核对并编辑草稿 → 勾选事实核对 → 回填网页编辑框。无需重复粘贴或导入简历；优化时使用的是所选网页原文。
+
+应用尝试打开该段编辑区，仅替换选中正文，保留同一编辑框中的其他段落；如网页布局暂未识别，可先点击原文进入编辑再回填。原文变化、多个相同候选、字数超限或无法确认独立保存按钮时停止操作。回填前在本机保存原文，支持撤回本次回填，遇到人工编辑会保留人工内容。最后在 BOSS 网页核对并点击保存/完成，应用不自动提交；姓名、公司、日期等结构字段不由该功能修改。
+
+真实在线页面已验证读取和编辑入口；模型生成、回填、撤回及冲突保护通过隔离的 Electron 测试网页验证，测试不提交真实账号简历。
+
+### 多模型与免费使用
+
+模型选择会作用于所有智能体，包括岗位匹配、公司分析与自动辅助。应用通过真实 HTTP 接口切换服务，不通过提示词模拟模型身份。
+
+| 入口 | 接口与配置 | 费用说明 |
+|---|---|---|
+| Ollama | 原生 `/api/chat`；默认本机 11434 端口，自动读取已下载模型 | 本机推理无 API 调用费，需要本机算力与模型下载空间 |
+| LM Studio | 本机 OpenAI 兼容服务，默认 1234 端口 | 本机推理无云端调用费，需要先下载、加载模型并开启服务 |
+| OpenRouter | Key + `openrouter/free` 或列表中的 `:free` 模型 | 默认仅免费模式，受平台频率、每日额度与可用性限制 |
+| DeepSeek / 硅基流动 / 阿里云百炼 | 各自 Key、对应地域 API 地址和模型 ID | 按平台计费或试用额度；不承诺永久免费 |
+| Google Gemini | 原生 `generateContent`，支持读取可生成文本的模型列表 | 部分模型、项目有免费额度；应用无法确认项目计费状态 |
+| 自定义兼容服务 | 填写 API 地址和模型 ID，可接 llama.cpp、vLLM 等 | 费用由所接服务决定；仅免费模式只允许本机地址 |
+
+**推荐免费本地路径**：安装 [Ollama](https://ollama.com/download/windows)，在终端执行 `ollama pull qwen3:4b`（[模型约 2.5 GB](https://ollama.com/library/qwen3:4b)）；保持 Ollama 运行，在应用选择 Ollama → 读取模型列表 → 选择模型 → 测试连接。下载只需进行一次，应用不打包模型权重。本地小模型的速度、分析质量与硬件及模型有关，可按需更换模型。
+
+**仅免费模式**默认用于本地入口及 OpenRouter：拒绝其他不能确认零计费的云服务，拒绝 Ollama 云模型及指向远程的别名；OpenRouter 请求附带 `provider.max_price` 零价格上限。额度用尽或限流时返回原因并等待，不会切换付费模型。详见 [OpenRouter 免费模型](https://openrouter.ai/collections/free-models/) 与 [价格上限说明](https://openrouter.ai/docs/guides/routing/provider-selection)。这不改变服务商的额度政策，也无法约束用户自行搭建的本地代理如何转发请求。
+
+每个服务分别记住地址、模型和加密 Key，切换时不会复用其他服务的密钥。支持自动保存、实际调用测试，以及本地模型超时和上下文长度调整。接口测试使用本机 HTTP 测试服务和隔离的 Electron 测试配置；不代表已经使用真实云端账号或下载模型权重完成推理。
 
 ---
 
@@ -207,7 +246,7 @@ npm run build             # 打包 → dist/BOSSAI.exe
 
 | 场景 | 操作 |
 |---|---|
-| 生成招呼语 | 打开职位详情页 → 面板「助手」→ 招呼语 → 两版任选 → 填入输入框 |
+| 生成招呼语 | 打开职位详情页 → 面板「助手」→ 招呼语 → 直击痛点 / 极简高冷 / 业务共情三版任选 → 填入输入框 |
 | 回复消息 | 聊天页收到消息 → 面板「回复」→ 生成 → 填入发送 |
 | 面试准备 | 「面试」→ 填公司 / 岗位（可「从会话获取」）→ 生成准备卡 |
 | 岗位匹配 | 打开职位列表 → 「匹配」→ 立即匹配（可写补充要求）→ 点卡片直达岗位 |
@@ -261,7 +300,7 @@ boss-ai-assistant/
 
 - 个人配置存本机 `%APPDATA%\boss-ai-desktop`；API Key 加密存储，配置原子写入并保留 `.bak` 恢复副本。
 - 代码仓库 **不包含任何** 真实用户数据；示例均为占位符，截图使用 mock 数据。
-- 调用模型时，任务相关的简历 / JD / 必要聊天片段会发送到配置的 DeepSeek 服务。
+- 调用模型时，任务相关的简历 / JD / 必要聊天片段会发送到当前选择的模型服务；本地模型发送至所配置的本机服务，云端模型发送至对应服务商。
 - 公开信息采集仅通过搜索引擎公开结果，不破解登录 / 反爬；小红书内容由用户自行登录后复制粘贴。
 - 消息发送始终由用户手动确认，系统只生成与填入。
 

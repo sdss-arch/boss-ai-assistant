@@ -21,7 +21,7 @@ npm ci
 npm start
 ```
 
-首次运行请在应用「设置」中填入自己的 DeepSeek API Key 与简历文本。**不要**把 API Key、简历、登录态或任何真实用户数据提交到仓库。
+首次运行请在应用「设置」中选择模型服务并填写简历。**本地模型（Ollama / LM Studio）无需云端 Key**；如使用云端服务，请勿把 API Key、简历、登录态或任何真实用户数据提交到仓库。
 
 ---
 
@@ -29,13 +29,16 @@ npm start
 
 - `desktop/main.js`：Electron 主进程，窗口、多视图与生命周期
 - `desktop/preload-*.js`：渲染进程与主进程之间的安全桥
-- `desktop/content/`：注入到 BOSS 页面的内容脚本
+- `desktop/content/`：注入到 BOSS 页面的内容脚本（含在线简历读取）
 - `desktop/panel.html` / `panel.js` / `panel.css`：AI 面板 UI
+- `desktop/model-settings.js`：多模型服务设置界面
+- `desktop/online-resume.js`：在线简历优化流程
 - `desktop/src/agents/`：专业智能体（每个 Agent 独立角色与提示词）
 - `desktop/src/skills/`：可插拔技能模块
-- `desktop/src/core/`：LLM 网关、存储、采集工具等基础设施
+- `desktop/src/core/`：LLM 网关、多模型配置、存储、采集工具等基础设施
 - `desktop/prompts/`：各 Agent 的 Prompt 模板
 - `desktop/tests/`：单元测试、集成测试与真实 Electron 冒烟测试
+- `scripts/`：语法检查、截图生成与独立目录构建校验
 - `docs/`：架构、路线图与隐私说明
 
 新增能力前请先看 [架构说明](./docs/ARCHITECTURE.md)，确认应该放在 Agent、Skill 还是 core 层。
@@ -48,16 +51,26 @@ npm start
 cd desktop
 
 # 1) 全量语法检查
-node -e "const{execFileSync}=require('child_process'),fs=require('fs'),p=require('path');const w=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()&&!['node_modules','dist','test-results','coverage'].includes(e.name)?w(p.join(d,e.name)):/\\.(js|cjs)$/.test(e.name)?[p.join(d,e.name)]:[]);w('.').forEach(f=>execFileSync(process.execPath,['--check',f],{stdio:'inherit'}));console.log('syntax ok')"
+npm run check
 
 # 2) 单元测试 + 集成测试
 npm test -- --runInBand
 
-# 3) 真实 Electron 冒烟测试（使用临时用户目录与模拟模型，不消耗真实 API）
+# 3) 真实 Electron 冒烟测试（临时用户目录 + mock 模型，不消耗真实 API）
 npm run test:desktop
+
+# 4) 在线简历与招呼语专项冒烟测试
+npm run test:online-resume
+npm run test:greeting
+
+# 或一次执行以上全部
+npm run verify
+
+# 可选：构建本机独立目录版并校验完整性
+npm run build:local
 ```
 
-三项全部通过后再提交 PR；CI 会在 push / PR 时重复执行相同检查。
+全部通过后再提交 PR；CI 会在 push / PR 时重复执行相同检查。所有测试都使用 mock 响应与隔离用户目录，不调用真实付费 API，也不提交真实账号简历。
 
 ---
 
@@ -93,7 +106,9 @@ chore(deps): 升级 electron-builder
 - 仓库中只能出现占位数据；示例简历、聊天记录一律使用虚构内容。
 - 截图请使用 `npm run capture:screenshots`，脚本会自动使用 mock 数据。
 - 不得添加绕过平台风控、自动发送消息、批量注册或爬虫滥用的功能。
-- 用户配置保存在本机 `%APPDATA%\boss-ai-desktop`，API Key 加密存储；任何改动不得削弱该边界。
+- 「仅免费模式」下不得接入无法确认零计费的云模型；本地模型需确认不会把请求转发到远程。
+- 用户配置保存在本机 `%APPDATA%\boss-ai-desktop`，各模型服务的 API Key 分别加密存储；任何改动不得削弱该边界。
+- 在线简历回填必须由用户在网页端自行确认保存，应用不自动提交。
 
 ---
 

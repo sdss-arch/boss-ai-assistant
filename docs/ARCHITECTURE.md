@@ -94,7 +94,8 @@ sequenceDiagram
 ## 5. Skills 与 Core
 
 - **Skills**（`src/skills/`）：`communication`、`jd-parsing`、`resume-analysis`、`risk-assessment`、`web-intelligence` 五个技能模块，由 `skill-loader.js` 动态加载，可热插拔。
-- **LLM 网关**（`src/core/llm.js`）：统一处理超时、5xx 重试、用量统计，并按模型裁剪不支持的参数（如 reasoner 的 `temperature`）。
+- **多模型 LLM 网关**（`src/core/llm.js` + `src/core/model-config.js`）：同一接口适配 Ollama 原生 `/api/chat`、Gemini 原生 `generateContent` 与 OpenAI 兼容服务（DeepSeek / OpenRouter / 硅基流动 / 阿里云百炼 / LM Studio / 自定义）。统一处理超时、重试、用量统计、动态模型列表、按服务独立加密 Key 与「仅免费模式」保护；请求禁止自动跟随重定向，避免凭据外泄。
+- **在线简历链路**（`content/online-resume.js` → IPC → `online-resume.js`）：从 BOSS 页面读取正文段落，分段优化后仅在用户确认时回填编辑框；保留原文备份、撤回与人工编辑保护。
 - **Store**（`src/core/store.js`）：加密保存 API Key，原子写入配置与业务数据，保留 `.bak` 恢复副本。
 - **Tools**（`src/core/tools.js`）：百度 / 搜狗 / Bing 公开检索与结构化字段抽取，多值投票解决证据冲突。
 - **WritingStyle / LearningAdapter**：跟踪 accept / modify / reject 反馈，动态调整提示词策略，保持输出风格稳定。
